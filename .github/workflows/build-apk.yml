@@ -11,18 +11,16 @@ jobs:
           java-version: '17'
       - name: Create project with Orange Icon
         run: |
+          ls -la
+          ICON=$(find . -maxdepth 1 -iname "*.png" -o -iname "*.jpg" | head -1)
+          echo "Using icon: $ICON"
           mkdir -p app/src/main/java/com/nilesoniq/app
-          mkdir -p app/src/main/res/mipmap-hdpi
-          mkdir -p app/src/main/res/mipmap-mdpi
-          mkdir -p app/src/main/res/mipmap-xhdpi
-          mkdir -p app/src/main/res/mipmap-xxhdpi
-          mkdir -p app/src/main/res/mipmap-xxxhdpi
-          mkdir -p app/src/main/res/values
-          cp icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png || cp *.png app/src/main/res/mipmap-hdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi app/src/main/res/values
+          if [ -f "$ICON" ]; then cp "$ICON" app/src/main/res/mipmap-hdpi/ic_launcher.png; else echo "NO ICON FOUND, creating placeholder"; fi
+          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
+          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher.png 2>/dev/null || true
+          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png 2>/dev/null || true
+          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true
           cat > app/src/main/java/com/nilesoniq/app/MainActivity.java << 'JAVA'
           package com.nilesoniq.app;
           import android.app.Activity;
@@ -67,8 +65,8 @@ jobs:
               applicationId "com.nilesoniq.app"
               minSdk 21
               targetSdk 34
-              versionCode 2
-              versionName "1.1-orange"
+              versionCode 3
+              versionName "1.2-orange"
             }
             compileOptions {
               sourceCompatibility JavaVersion.VERSION_17
