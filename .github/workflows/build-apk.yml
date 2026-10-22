@@ -1,29 +1,32 @@
 name: Build NileSoniQ APK
-on: [push]
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Java
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
       - name: Build APK
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init NileSoniQ com.nilesoniq.app --web-dir=.
+          mkdir -p www
+          cp index.html www/ 2>/dev/null || echo "copy index"
+          cp manifest.json www/ 2>/dev/null || true
+          npx cap init "NileSoniQ" "com.nilesoniq.app" --web-dir=www
           npx cap add android
-          npx cap copy android
+          npx cap copy
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
