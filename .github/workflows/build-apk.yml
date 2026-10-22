@@ -9,33 +9,36 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Create Android Project
+      - name: Create project
         run: |
           mkdir -p app/src/main/java/com/nilesoniq/app
           mkdir -p app/src/main/res/values
-          cat > app/src/main/java/com/nilesoniq/app/MainActivity.java << 'EOF'
+          cat > app/src/main/java/com/nilesoniq/app/MainActivity.java << 'JAVA'
           package com.nilesoniq.app;
           import android.app.Activity;
           import android.os.Bundle;
+          import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           public class MainActivity extends Activity {
-            public void onCreate(Bundle b){
+            @Override public void onCreate(Bundle b){
               super.onCreate(b);
               WebView wv = new WebView(this);
-              wv.getSettings().setJavaScriptEnabled(true);
-              wv.getSettings().setDomStorageEnabled(true);
+              WebSettings s = wv.getSettings();
+              s.setJavaScriptEnabled(true);
+              s.setDomStorageEnabled(true);
               wv.setWebViewClient(new WebViewClient());
               wv.loadUrl("https://nilesoniq.com");
               setContentView(wv);
             }
           }
-          EOF
-          cat > app/src/main/AndroidManifest.xml << 'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.nilesoniq.app">
+          JAVA
+          cat > app/src/main/AndroidManifest.xml << 'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET"/>
-            <application android:label="NileSoniQ" android:theme="@android:style/Theme.NoTitleBar">
-              <activity android:name=".MainActivity" android:exported="true">
+            <application android:label="NileSoniQ">
+              <activity android:name="com.nilesoniq.app.MainActivity" android:exported="true">
                 <intent-filter>
                   <action android:name="android.intent.action.MAIN"/>
                   <category android:name="android.intent.category.LAUNCHER"/>
@@ -43,44 +46,39 @@ jobs:
               </activity>
             </application>
           </manifest>
-          EOF
-          cat > app/src/main/res/values/strings.xml << 'EOF'
-          <resources><string name="app_name">NileSoniQ</string></resources>
-          EOF
-          cat > app/build.gradle << 'EOF'
-          apply plugin: 'com.android.application'
+          XML
+          echo '<resources><string name="app_name">NileSoniQ</string></resources>' > app/src/main/res/values/strings.xml
+          cat > app/build.gradle << 'GRADLE'
+          plugins { id 'com.android.application' }
           android {
-            compileSdkVersion 34
+            namespace 'com.nilesoniq.app'
+            compileSdk 34
             defaultConfig {
               applicationId "com.nilesoniq.app"
-              minSdkVersion 21
-              targetSdkVersion 34
+              minSdk 21
+              targetSdk 34
               versionCode 1
               versionName "1.0"
             }
+            compileOptions {
+              sourceCompatibility JavaVersion.VERSION_17
+              targetCompatibility JavaVersion.VERSION_17
+            }
           }
-          dependencies {}
-          EOF
-          cat > build.gradle << 'EOF'
+          GRADLE
+          cat > build.gradle << 'GRADLE'
           buildscript {
             repositories { google(); mavenCentral() }
-            dependencies { classpath 'com.android.tools.build:gradle:8.1.0' }
+            dependencies { classpath 'com.android.tools.build:gradle:8.1.4' }
           }
           allprojects { repositories { google(); mavenCentral() } }
-          EOF
-          cat > settings.gradle << 'EOF'
-          include ':app'
-          EOF
-          cat > gradlew << 'EOF'
-          #!/bin/sh
-          exec gradle "$@"
-          EOF
-          chmod +x gradlew
-      - name: Build with Gradle
+          GRADLE
+          echo "include ':app'" > settings.gradle
+      - name: Build APK
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: assembleDebug
           gradle-version: 8.5
+          arguments: assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: NileSoniQ-APK
