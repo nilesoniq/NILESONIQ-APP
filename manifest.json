@@ -1,0 +1,10 @@
+{
+  "name": "NileSoniQ",
+  "short_name": "NileSoniQ",
+  "description": "Ugandan Music Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#ff6a00",
+  "icons": [{"src": "https://nilesoniq.com/favicon.ico","sizes": "192x192","type": "image/png"}]
+}
