@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NileSoniQ</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ff6a00">
+<style>
+body{margin:0;background:#0a0a0a;overflow:hidden}
+#app{width:100vw;height:100vh;border:none}
+#splash{position:fixed;inset:0;background:#0a0a0a;display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9999}
+#splash h1{color:white;font-family:Arial;font-weight:900;font-size:32px;letter-spacing:-1px}
+#splash h1 span{color:#ff6a00}
+#splash p{color:#777;font-family:Arial;margin-top:10px}
+</style>
+</head>
+<body>
+<div id="splash"><h1>NILE <span>SONIQ</span></h1><p>Loading Ugandan Music...</p></div>
+<iframe id="app" src="https://nilesoniq.com" allow="autoplay; fullscreen; microphone"></iframe>
+<script>
+const iframe=document.getElementById('app');
+iframe.onload=()=>{document.getElementById('splash').style.display='none'};
+// Keep music playing, handle back button
+let lastBack=0;
+document.addEventListener('backbutton',()=>{iframe.contentWindow.history.back()},false);
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js')}
+</script>
+</body>
+</html>
