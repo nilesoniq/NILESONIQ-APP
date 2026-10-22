@@ -9,18 +9,40 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Create project with Orange Icon
+      - name: Generate Orange Icon Automatically
         run: |
-          ls -la
-          ICON=$(find . -maxdepth 1 -iname "*.png" -o -iname "*.jpg" | head -1)
-          echo "Using icon: $ICON"
+          python3 -m pip install Pillow -q
+          python3 << 'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          # Create 1024x1024 orange gradient icon with N
+          img = Image.new('RGB', (1024,1024), '#FF6600')
+          draw = ImageDraw.Draw(img)
+          # Gradient effect
+          for y in range(1024):
+              r = int(255 - y*0.15)
+              g = int(102 + y*0.05)
+              b = 0
+              draw.line([(0,y),(1024,y)], fill=(r,g,b))
+          # White N
+          try:
+              font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 700)
+          except:
+              font = ImageFont.load_default()
+          draw.text((280, 150), "N", fill="white", font=font)
+          img.save("icon.png")
+          print("Icon created")
+          PY
+          ls -lh icon.png
+
+      - name: Create Android Project
+        run: |
           mkdir -p app/src/main/java/com/nilesoniq/app
           mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi app/src/main/res/values
-          if [ -f "$ICON" ]; then cp "$ICON" app/src/main/res/mipmap-hdpi/ic_launcher.png; else echo "NO ICON FOUND, creating placeholder"; fi
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png 2>/dev/null || true
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher.png 2>/dev/null || true
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png 2>/dev/null || true
-          cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true
+          cp icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-mdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cat > app/src/main/java/com/nilesoniq/app/MainActivity.java << 'JAVA'
           package com.nilesoniq.app;
           import android.app.Activity;
@@ -65,8 +87,8 @@ jobs:
               applicationId "com.nilesoniq.app"
               minSdk 21
               targetSdk 34
-              versionCode 3
-              versionName "1.2-orange"
+              versionCode 4
+              versionName "2.0-orange-auto"
             }
             compileOptions {
               sourceCompatibility JavaVersion.VERSION_17
@@ -82,11 +104,13 @@ jobs:
           allprojects { repositories { google(); mavenCentral() } }
           GRADLE
           echo "include ':app'" > settings.gradle
+
       - name: Build APK
         uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 8.5
           arguments: assembleDebug
+
       - uses: actions/upload-artifact@v4
         with:
           name: NileSoniQ-Orange-APK
