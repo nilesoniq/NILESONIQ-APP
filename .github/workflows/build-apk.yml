@@ -347,6 +347,7 @@ jobs:
                   else if (name.equals("Discover")) discover();
                   else if (name.equals("Player")) playerScreen();
                   else if (name.equals("Community")) community();
+                  else if (signedInUser != null) artistDashboard();
                   else profile();
               }
 
@@ -779,8 +780,8 @@ jobs:
                   new Thread(() -> {
                       String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
                       String walletRaw = getApiText("/api/db/artist_wallets?select=balance&eq.user_id="+urlEncode(userId)+"&limit=10");
-                      String payoutsRaw = getApiText("/api/db/artist_payouts?select=amount,status&eq.user_id="+urlEncode(userId)+"&limit=100");
-                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=amount,status&eq.artist_id="+urlEncode(userId)+"&limit=100");
+                      String payoutsRaw = getApiText("/api/db/artist_payouts?select=id,amount,status,created_at&eq.user_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
+                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
                       JSONArray songs = dataArray(songsRaw);
                       JSONArray wallets = dataArray(walletRaw);
                       JSONArray payouts = dataArray(payoutsRaw);
@@ -846,6 +847,20 @@ jobs:
                           LinearLayout.LayoutParams topActionsParams = new LinearLayout.LayoutParams(-1, dp(44));
                           topActionsParams.bottomMargin = dp(12);
                           content.addView(topActions, topActionsParams);
+                          LinearLayout verification = column();
+                          verification.setBackground(rounded(Color.WHITE,14,border));
+                          verification.setPadding(dp(14),dp(12),dp(14),dp(12));
+                          verification.addView(label("✓  Artist Badge Verification",15,white,true));
+                          gap(verification,4);
+                          verification.addView(label("Request a verified artist badge. Verification status is subject to admin review.",12,muted,false));
+                          Button verifyButton=new Button(this);
+                          verifyButton.setText("Request Verification"); verifyButton.setAllCaps(false);
+                          verifyButton.setTextColor(orange);
+                          verifyButton.setOnClickListener(v -> dashboardDetail("Artist Badge Verification","Your verification request can be reviewed by the NileSoniQ team. The current app API does not expose a confirmed badge-request endpoint, so this screen will not claim to submit a request. Contact NileSoniQ support/admin to request verification."));
+                          verification.addView(verifyButton);
+                          LinearLayout.LayoutParams verifyParams=new LinearLayout.LayoutParams(-1,-2);
+                          verifyParams.bottomMargin=dp(12);
+                          content.addView(verification,verifyParams);
                           // Dashboard summary cards follow the supplied reference while using only live API totals.
                           LinearLayout stats = new LinearLayout(this);
                           stats.setOrientation(LinearLayout.HORIZONTAL);
@@ -870,14 +885,36 @@ jobs:
                           chartTitleRow.addView(chartPeriod);
                           chartPanel.addView(chartTitleRow);
                           gap(chartPanel,12);
-                          TextView chartMessage = label("Daily earnings history is not available from the current API. Connect dated earnings records to show the real orange line chart here.",12,muted,false);
-                          chartMessage.setPadding(dp(2),dp(12),dp(2),dp(12));
+                          TextView chartMessage = label("Estimated earnings overview",12,muted,false);
                           chartPanel.addView(chartMessage);
+                          View earningsGraph = new View(this) {
+                              private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                              @Override protected void onDraw(android.graphics.Canvas canvas) {
+                                  super.onDraw(canvas);
+                                  float left=dp(34), right=getWidth()-dp(8), top=dp(12), bottom=getHeight()-dp(25);
+                                  if (right<=left || bottom<=top) return;
+                                  paint.setStrokeWidth(dp(1)); paint.setColor(border);
+                                  for(int i=0;i<4;i++){ float y=top+(bottom-top)*i/3f; canvas.drawLine(left,y,right,y,paint); }
+                                  paint.setTextSize(dp(10)); paint.setColor(muted);
+                                  String[] labels={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+                                  for(int i=0;i<labels.length;i++) canvas.drawText(labels[i],left+(right-left)*i/6f-dp(8),getHeight()-dp(5),paint);
+                                  // The current API supplies lifetime plays and wallet totals, not dated daily earnings.
+                                  // Draw a neutral zero-baseline chart until real dated earnings records are available.
+                                  paint.setColor(orange); paint.setStrokeWidth(dp(2));
+                                  canvas.drawLine(left,bottom,right,bottom,paint);
+                                  paint.setStyle(android.graphics.Paint.Style.FILL);
+                                  canvas.drawCircle(left,bottom,dp(3),paint);
+                                  canvas.drawCircle(right,bottom,dp(3),paint);
+                              }
+                          };
+                          chartPanel.addView(earningsGraph,new LinearLayout.LayoutParams(-1,dp(125)));
+                          TextView chartNote=label("Daily estimates will appear when dated earnings data is available. No values are invented.",10,muted,false);
+                          chartPanel.addView(chartNote);
                           LinearLayout.LayoutParams chartParams = new LinearLayout.LayoutParams(-1,-2);
                           chartParams.bottomMargin = dp(14);
                           content.addView(chartPanel,chartParams);
 
-                          // Recent song activity: only show real song titles and play counts returned by the API.
+                          // Recent Transactions lists actual payout and withdrawal records, never song rows.
                           LinearLayout recentPanel = column();
                           recentPanel.setBackground(rounded(Color.WHITE,16,border));
                           recentPanel.setElevation(dp(2));
@@ -885,40 +922,52 @@ jobs:
                           LinearLayout recentHeading = new LinearLayout(this);
                           recentHeading.setGravity(Gravity.CENTER_VERTICAL);
                           recentHeading.addView(label("Recent Transactions",18,white,true),new LinearLayout.LayoutParams(0,-2,1));
+                          final String[] transactionListHolder = {"No payout or withdrawal transaction records were returned for this account."};
                           TextView seeAll = label("See all",14,orange,true);
-                          seeAll.setOnClickListener(v -> dashboardDetail("Recent Transactions", songList));
+                          seeAll.setOnClickListener(v -> dashboardDetail("Recent Transactions", transactionListHolder[0]));
                           recentHeading.addView(seeAll);
                           recentPanel.addView(recentHeading);
                           gap(recentPanel,8);
-                          int shown = 0;
-                          for (int si=0; si<songs.length() && shown<5; si++) {
-                              JSONObject song = songs.optJSONObject(si);
-                              if (song == null) continue;
-                              LinearLayout tx = new LinearLayout(this);
-                              tx.setGravity(Gravity.CENTER_VERTICAL);
-                              tx.setPadding(0,dp(10),0,dp(10));
-                              TextView musicIcon = label("♫",23,orange,true);
-                              musicIcon.setGravity(Gravity.CENTER);
-                              musicIcon.setBackground(rounded(Color.rgb(255,230,207),12,Color.TRANSPARENT));
-                              tx.addView(musicIcon,new LinearLayout.LayoutParams(dp(48),dp(48)));
-                              LinearLayout txInfo = column();
-                              txInfo.setPadding(dp(10),0,dp(6),0);
-                              txInfo.addView(label(song.optString("title","Untitled song"),14,white,true));
-                              gap(txInfo,3);
-                              txInfo.addView(label(String.format(Locale.US,"%,d plays",song.optLong("plays",0)),12,muted,false));
-                              tx.addView(txInfo,new LinearLayout.LayoutParams(0,-2,1));
-                              tx.addView(label("—",15,orange,true));
-                              recentPanel.addView(tx);
-                              if (shown<4 && si<songs.length()-1) {
-                                  View divider = new View(this); divider.setBackgroundColor(border);
-                                  recentPanel.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
-                              }
+                          JSONArray transactions = new JSONArray();
+                          for(int ti=0;ti<payouts.length();ti++){
+                              JSONObject t=payouts.optJSONObject(ti);
+                              if(t!=null){ JSONObject row=new JSONObject(); try{row.put("kind","Payout");row.put("amount",t.optDouble("amount",0));row.put("status",t.optString("status","Unknown"));row.put("created_at",t.optString("created_at",""));}catch(Exception ignored){} transactions.put(row); }
+                          }
+                          for(int ti=0;ti<withdrawals.length();ti++){
+                              JSONObject t=withdrawals.optJSONObject(ti);
+                              if(t!=null){ JSONObject row=new JSONObject(); try{row.put("kind","Withdrawal");row.put("amount",t.optDouble("amount",0));row.put("status",t.optString("status","Unknown"));row.put("created_at",t.optString("created_at",""));}catch(Exception ignored){} transactions.put(row); }
+                          }
+                          StringBuilder transactionText=new StringBuilder();
+                          int shown=0;
+                          for(int ti=0;ti<transactions.length() && shown<5;ti++){
+                              JSONObject tx=transactions.optJSONObject(ti); if(tx==null) continue;
+                              String kind=tx.optString("kind","Transaction");
+                              String status=tx.optString("status","Unknown");
+                              String date=tx.optString("created_at","");
+                              if(transactionText.length()>0) transactionText.append("\\n\\n");
+                              transactionText.append(kind).append(" — UGX ").append(money(tx.optDouble("amount",0)));
+                              transactionText.append("\\nStatus: ").append(status);
+                              if(!date.isEmpty()) transactionText.append("\\nDate: ").append(date);
+                              LinearLayout row=new LinearLayout(this);
+                              row.setGravity(Gravity.CENTER_VERTICAL);
+                              row.setPadding(0,dp(10),0,dp(10));
+                              TextView txIcon=label(kind.equals("Payout")?"↗":"↙",22,orange,true);
+                              txIcon.setGravity(Gravity.CENTER);
+                              txIcon.setBackground(rounded(Color.rgb(255,230,207),12,Color.TRANSPARENT));
+                              row.addView(txIcon,new LinearLayout.LayoutParams(dp(48),dp(48)));
+                              LinearLayout txInfo=column(); txInfo.setPadding(dp(10),0,dp(6),0);
+                              txInfo.addView(label(kind,14,white,true)); gap(txInfo,3);
+                              txInfo.addView(label(status+(date.isEmpty()?"":" · "+date),11,muted,false));
+                              row.addView(txInfo,new LinearLayout.LayoutParams(0,-2,1));
+                              row.addView(label("UGX "+money(tx.optDouble("amount",0)),13,orange,true));
+                              recentPanel.addView(row);
+                              if(shown<4 && ti<transactions.length()-1){ View divider=new View(this); divider.setBackgroundColor(border); recentPanel.addView(divider,new LinearLayout.LayoutParams(-1,dp(1))); }
                               shown++;
                           }
-                          if (shown==0) {
-                              gap(recentPanel,8);
-                              recentPanel.addView(label("No recent song activity is available yet.",13,muted,false));
-                          }
+                          transactionListHolder[0]=transactionText.length()==0
+                              ? "No payout or withdrawal transaction records were returned for this account."
+                              : transactionText.toString();
+                          if(shown==0){ gap(recentPanel,8); recentPanel.addView(label("No payout or withdrawal transactions yet.",13,muted,false)); }
                           LinearLayout.LayoutParams recentParams = new LinearLayout.LayoutParams(-1,-2);
                           recentParams.bottomMargin = dp(14);
                           content.addView(recentPanel,recentParams);
