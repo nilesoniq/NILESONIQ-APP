@@ -1,4 +1,4 @@
-name: Build NileSoniQ APK Orange
+name: Build NileSoniQ Auto Logo
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -9,51 +9,74 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Generate Orange Icon Automatically
+
+      - name: Auto Generate Orange N Logo
         run: |
           python3 -m pip install Pillow -q
           python3 << 'PY'
           from PIL import Image, ImageDraw, ImageFont
-          # Create 1024x1024 orange gradient icon with N
-          img = Image.new('RGB', (1024,1024), '#FF6600')
+          W=1024
+          img = Image.new('RGB', (W,W), '#CC6600')
           draw = ImageDraw.Draw(img)
-          # Gradient effect
-          for y in range(1024):
-              r = int(255 - y*0.15)
-              g = int(102 + y*0.05)
-              b = 0
-              draw.line([(0,y),(1024,y)], fill=(r,g,b))
-          # White N
+          # Outer background
+          draw.rectangle([0,0,W,W], fill='#E67E00')
+          # Inner rounded square gradient
+          # Create gradient
+          for y in range(W):
+              t = y / W
+              r = int(255 * (1-t) + 235 * t)
+              g = int(110 * (1-t) + 160 * t)
+              b = int(0 * (1-t) + 0 * t)
+              # only inside rounded rect
+              draw.line([(80, y), (W-80, y)], fill=(r,g,b))
+          # Round corners mask
+          radius = 180
+          mask = Image.new('L', (W,W), 0)
+          md = ImageDraw.Draw(mask)
+          md.rounded_rectangle([80,80,W-80,W-80], radius=radius, fill=255)
+          # Apply wave highlight bottom right
+          overlay = Image.new('RGB', (W,W), '#FFB000')
+          od = ImageDraw.Draw(overlay)
+          od.ellipse([-200, 400, W+200, W+400], fill='#FFC200')
+          # Composite
+          base = Image.new('RGB', (W,W), '#E67E00')
+          base.paste(img, mask=mask)
+          # Draw N
           try:
-              font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 700)
+              fontN = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 550)
+              fontT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70)
           except:
-              font = ImageFont.load_default()
-          draw.text((280, 150), "N", fill="white", font=font)
-          img.save("icon.png")
-          print("Icon created")
+              fontN = ImageFont.load_default()
+              fontT = ImageFont.load_default()
+          d = ImageDraw.Draw(base)
+          # Center N
+          d.text((W//2, W//2-40), "N", fill="white", font=fontN, anchor="mm")
+          d.text((W//2, W//2+280), "NileSoniQ", fill="white", font=fontT, anchor="mm")
+          base.save("icon.png")
+          print("Auto logo generated")
           PY
-          ls -lh icon.png
 
-      - name: Create Android Project
+      - name: Build APK
         run: |
           mkdir -p app/src/main/java/com/nilesoniq/app
           mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi app/src/main/res/values
+          cp icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
           cp icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp icon.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-          cp icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          cp icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cat > app/src/main/java/com/nilesoniq/app/MainActivity.java << 'JAVA'
           package com.nilesoniq.app;
-          import android.app.Activity;
           import android.os.Bundle;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          public class MainActivity extends Activity {
-            @Override public void onCreate(Bundle b){
+          import androidx.appcompat.app.AppCompatActivity;
+          public class MainActivity extends AppCompatActivity {
+            private WebView wv;
+            @Override protected void onCreate(Bundle b){
               super.onCreate(b);
-              WebView wv = new WebView(this);
+              wv = new WebView(this);
               WebSettings s = wv.getSettings();
               s.setJavaScriptEnabled(true);
               s.setDomStorageEnabled(true);
@@ -61,19 +84,15 @@ jobs:
               wv.loadUrl("https://nilesoniq.com");
               setContentView(wv);
             }
+            @Override public void onBackPressed(){ if(wv.canGoBack()) wv.goBack(); else super.onBackPressed(); }
           }
           JAVA
           cat > app/src/main/AndroidManifest.xml << 'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET"/>
-            <application android:label="NileSoniQ" android:icon="@mipmap/ic_launcher">
-              <activity android:name="com.nilesoniq.app.MainActivity" android:exported="true">
-                <intent-filter>
-                  <action android:name="android.intent.action.MAIN"/>
-                  <category android:name="android.intent.category.LAUNCHER"/>
-                </intent-filter>
-              </activity>
+            <application android:label="NileSoniQ" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.NoTitleBar">
+              <activity android:name="com.nilesoniq.app.MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
             </application>
           </manifest>
           XML
@@ -87,31 +106,25 @@ jobs:
               applicationId "com.nilesoniq.app"
               minSdk 21
               targetSdk 34
-              versionCode 4
-              versionName "2.0-orange-auto"
+              versionCode 11
+              versionName "3.1-auto-logo"
             }
-            compileOptions {
-              sourceCompatibility JavaVersion.VERSION_17
-              targetCompatibility JavaVersion.VERSION_17
-            }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
+          dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
           GRADLE
           cat > build.gradle << 'GRADLE'
-          buildscript {
-            repositories { google(); mavenCentral() }
-            dependencies { classpath 'com.android.tools.build:gradle:8.1.4' }
-          }
+          buildscript { repositories { google(); mavenCentral() } dependencies { classpath 'com.android.tools.build:gradle:8.1.4' } }
           allprojects { repositories { google(); mavenCentral() } }
           GRADLE
           echo "include ':app'" > settings.gradle
 
-      - name: Build APK
-        uses: gradle/gradle-build-action@v2
+      - uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 8.5
           arguments: assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NileSoniQ-Orange-APK
+          name: NileSoniQ-Auto-Logo-APK
           path: app/build/outputs/apk/debug/app-debug.apk
