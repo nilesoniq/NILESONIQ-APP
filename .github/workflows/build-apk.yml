@@ -9,40 +9,30 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Auto Generate Logo
+      - name: Make Logo
         run: |
           python3 -m pip install Pillow -q
           python3 << 'PY'
           from PIL import Image, ImageDraw, ImageFont
           W=1024
-          img = Image.new('RGB', (W,W), '#FF6A00')
-          draw = ImageDraw.Draw(img)
-          # orange gradient
+          img=Image.new('RGB',(W,W),'#FF7A00')
+          draw=ImageDraw.Draw(img)
+          # simple gradient
           for y in range(W):
-              r = int(255 - y*0.12)
-              g = int(106 + y*0.08)
-              b = 0
-              draw.line([(0,y),(W,y)], fill=(max(r,200), max(g,80), b))
-          # rounded mask
-          mask = Image.new('L', (W,W), 0)
-          md = ImageDraw.Draw(mask)
-          md.rounded_rectangle([60,60,W-60,W-60], radius=180, fill=255)
-          # apply mask
-          final = Image.new('RGB', (W,W), '#D97706')
-          final.paste(img, mask=mask)
-          d = ImageDraw.Draw(final)
+              g=int(122+y*0.08)
+              r=255
+              draw.line([(0,y),(W,y)],fill=(r,g,0))
           try:
-              fN = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 520)
-              fT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 68)
+              fN=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",500)
+              fT=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",70)
           except:
-              fN = ImageFont.load_default()
-              fT = ImageFont.load_default()
-          d.text((W//2, W//2-30), "N", fill="white", font=fN, anchor="mm")
-          d.text((W//2, W//2+270), "NileSoniQ", fill="white", font=fT, anchor="mm")
-          final.save("icon.png")
-          print("OK icon.png created")
+              fN=ImageFont.load_default()
+              fT=ImageFont.load_default()
+          draw.text((W//2,W//2-30),"N",fill="white",font=fN,anchor="mm")
+          draw.text((W//2,W//2+260),"NileSoniQ",fill="white",font=fT,anchor="mm")
+          img.save("icon.png")
+          print("icon created")
           PY
-          ls -lh icon.png
       - name: Build APK
         run: |
           mkdir -p app/src/main/java/com/nilesoniq/app
@@ -60,13 +50,12 @@ jobs:
           import android.webkit.WebViewClient;
           import androidx.appcompat.app.AppCompatActivity;
           public class MainActivity extends AppCompatActivity {
-            private WebView wv;
+            WebView wv;
             @Override protected void onCreate(Bundle b){
               super.onCreate(b);
-              wv = new WebView(this);
-              WebSettings s = wv.getSettings();
-              s.setJavaScriptEnabled(true);
-              s.setDomStorageEnabled(true);
+              wv=new WebView(this);
+              wv.getSettings().setJavaScriptEnabled(true);
+              wv.getSettings().setDomStorageEnabled(true);
               wv.setWebViewClient(new WebViewClient());
               wv.loadUrl("https://nilesoniq.com");
               setContentView(wv);
@@ -89,13 +78,7 @@ jobs:
           android {
             namespace 'com.nilesoniq.app'
             compileSdk 34
-            defaultConfig {
-              applicationId "com.nilesoniq.app"
-              minSdk 21
-              targetSdk 34
-              versionCode 12
-              versionName "3.2-auto-logo-fixed"
-            }
+            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 13; versionName "3.3-auto-simple" }
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
           dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
