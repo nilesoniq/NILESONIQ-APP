@@ -189,12 +189,12 @@ jobs:
               private static final String COOKIE_KEY = "session_cookie";
 
               // NileSoniQ light theme: white surfaces, orange highlights and readable text.
-              private final int bg = Color.rgb(255,255,255);
+              private final int bg = Color.rgb(248,247,245);
               private final int panel = Color.rgb(255,255,255);
-              private final int orange = Color.rgb(255,122,0);
-              private final int white = Color.rgb(31,31,31);
+              private final int orange = Color.rgb(244,119,0);
+              private final int white = Color.rgb(32,33,42);
               private final int muted = Color.rgb(105,105,105);
-              private final int border = Color.rgb(235,235,235);
+              private final int border = Color.rgb(233,231,228);
 
               private LinearLayout root, content;
               private LinearLayout songResults, genreFilterBar;
@@ -365,16 +365,77 @@ jobs:
               }
 
               private void home() {
-                  heading("Music from everywhere.","Discover music. Find artists. Be part of the sound.");
-                  card("YOUR MUSIC. YOUR COMMUNITY.",
-                       "Discover your next favourite sound and connect with music creators.");
-                  action("Explore music",() -> screen("Discover"));
-                  action("Open music player",() -> screen("Player"));
-                  content.addView(label("LATEST APPROVED SONGS",12,orange,true));
+                  // Refreshed discovery home: warm background, orange brand accents,
+                  // rounded search and song cards. Existing song API and playback remain unchanged.
+                  heading("Discover your sound", "Fresh music, rising artists and sounds from across the community.");
+
+                  LinearLayout hero = column();
+                  hero.setPadding(dp(18),dp(18),dp(18),dp(18));
+                  GradientDrawable heroBg = new GradientDrawable(
+                      GradientDrawable.Orientation.TL_BR,
+                      new int[]{Color.rgb(255,239,222),Color.rgb(255,220,185)});
+                  heroBg.setCornerRadius(dp(22));
+                  hero.setBackground(heroBg);
+                  hero.addView(label("YOUR NEXT FAVOURITE",11,orange,true));
+                  gap(hero,8);
+                  hero.addView(label("Feel the rhythm.",25,white,true));
+                  gap(hero,5);
+                  hero.addView(label("Discover music made to move you.",14,muted,false));
+                  gap(hero,14);
+                  Button explore = new Button(this);
+                  explore.setText("Explore all music  →");
+                  explore.setAllCaps(false);
+                  explore.setTextColor(Color.WHITE);
+                  explore.setBackgroundTintList(android.content.res.ColorStateList.valueOf(orange));
+                  explore.setOnClickListener(v -> screen("Discover"));
+                  hero.addView(explore,new LinearLayout.LayoutParams(-1,dp(48)));
+                  LinearLayout.LayoutParams heroParams = new LinearLayout.LayoutParams(-1,-2);
+                  heroParams.bottomMargin = dp(18);
+                  content.addView(hero,heroParams);
+
+                  content.addView(label("Find your sound",19,white,true));
+                  gap(content,8);
+                  songSearchInput = field("Search songs, artists or genres",InputType.TYPE_CLASS_TEXT);
+                  songSearchInput.addTextChangedListener(new TextWatcher() {
+                      @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                      @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                          renderSongs();
+                      }
+                      @Override public void afterTextChanged(Editable s) {}
+                  });
+
+                  LinearLayout categories = new LinearLayout(this);
+                  categories.setOrientation(LinearLayout.HORIZONTAL);
+                  categories.setGravity(Gravity.CENTER_VERTICAL);
+                  String[] categoryNames = {"New Releases", "Top Charts", "Trending"};
+                  for (String category : categoryNames) {
+                      TextView chip = label(category,12,category.equals("New Releases")?Color.WHITE:muted,true);
+                      chip.setGravity(Gravity.CENTER);
+                      chip.setPadding(dp(12),dp(10),dp(12),dp(10));
+                      chip.setBackground(rounded(category.equals("New Releases")?orange:Color.WHITE,22,
+                          category.equals("New Releases")?orange:border));
+                      LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2,-2);
+                      cp.rightMargin = dp(7);
+                      categories.addView(chip,cp);
+                      chip.setOnClickListener(v -> {
+                          Toast.makeText(this,category+" uses the approved songs currently available.",Toast.LENGTH_SHORT).show();
+                      });
+                  }
+                  LinearLayout.LayoutParams categoryParams = new LinearLayout.LayoutParams(-1,-2);
+                  categoryParams.bottomMargin = dp(18);
+                  content.addView(categories,categoryParams);
+
+                  LinearLayout section = new LinearLayout(this);
+                  section.setGravity(Gravity.CENTER_VERTICAL);
+                  section.addView(label("Latest approved songs",18,white,true),
+                      new LinearLayout.LayoutParams(0,-2,1));
+                  TextView seeAll = label("See all  →",13,orange,true);
+                  seeAll.setOnClickListener(v -> screen("Discover"));
+                  section.addView(seeAll);
+                  content.addView(section);
                   gap(content,12);
 
-                  // Keep song rows inside a dedicated container so refreshes replace
-                  // old rows instead of appending duplicates to the page.
+                  // The current API, approved-song filter and audio playback are preserved.
                   songResults = column();
                   content.addView(songResults);
                   loadSongs();
