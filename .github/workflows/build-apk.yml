@@ -829,15 +829,78 @@ jobs:
               }
 
               private void editArtistProfile() {
+                  if (signedInUser == null) { screen("Profile"); return; }
                   content.removeAllViews();
-                  heading("Edit Profile", "Review your artist details");
-                  String name = signedInUser == null ? "" : signedInUser.optString("artist_name", signedInUser.optString("name", ""));
-                  String email = signedInUser == null ? "" : signedInUser.optString("email", "");
-                  card("Artist name", name.isEmpty() ? "No artist name is available on this session." : name);
-                  card("Email address", email);
-                  card("Profile photo", profileImageUrl().isEmpty() ? "No profile photo is linked to this account yet." : "A profile photo is linked to this account.");
-                  card("Profile editing", "Your current app API does not expose a confirmed profile-update endpoint in this workflow, so this screen will not pretend to save changes or overwrite your account details.");
+                  heading("Edit Artist Profile", "Update the details shown on your artist page");
+                  final EditText nameInput = editField("Artist name");
+                  final EditText bioInput = editField("Artist bio");
+                  final EditText locationInput = editField("Location");
+                  final EditText photoInput = editField("Profile photo URL (https://...)");
+                  String currentName = signedInUser.optString("artist_name", signedInUser.optString("name", ""));
+                  String currentBio = signedInUser.optString("bio", "");
+                  String currentLocation = signedInUser.optString("location", "Uganda");
+                  String currentPhoto = profileImageUrl();
+                  nameInput.setText(currentName);
+                  bioInput.setText(currentBio);
+                  locationInput.setText(currentLocation);
+                  photoInput.setText(currentPhoto);
+                  content.addView(nameInput); gap(content,10);
+                  content.addView(bioInput); gap(content,10);
+                  content.addView(locationInput); gap(content,10);
+                  content.addView(photoInput); gap(content,12);
+                  card("Profile photo", "Paste a direct HTTPS image URL. The photo URL is saved to your artist profile and loaded on the dashboard.");
+                  action("Save Profile", () -> {
+                      String name = nameInput.getText().toString().trim();
+                      String bio = bioInput.getText().toString().trim();
+                      String location = locationInput.getText().toString().trim();
+                      String photo = photoInput.getText().toString().trim();
+                      if (name.isEmpty()) { Toast.makeText(this,"Artist name is required.",Toast.LENGTH_LONG).show(); return; }
+                      if (!photo.isEmpty() && !photo.startsWith("https://")) { Toast.makeText(this,"Profile photo URL must start with https://",Toast.LENGTH_LONG).show(); return; }
+                      final String userId = signedInUser.optString("id", signedInUser.optString("user_id", ""));
+                      new Thread(() -> {
+                          try {
+                              JSONObject payload = new JSONObject();
+                              payload.put("user_id", userId);
+                              payload.put("name", name);
+                              payload.put("bio", bio);
+                              payload.put("location", location.isEmpty() ? "Uganda" : location);
+                              payload.put("avatar_url", photo);
+                              ApiResult result = request("POST", "/api/db/artists", payload);
+                              if (result.code < 200 || result.code >= 300 || result.body == null || result.body.has("error") && !result.body.isNull("error")) {
+                                  String message = result.body == null ? "Could not save artist profile (HTTP " + result.code + ")." : result.body.optString("error", "Profile save failed.");
+                                  runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+                                  return;
+                              }
+                              JSONObject artist = result.body.optJSONObject("data");
+                              runOnUiThread(() -> {
+                                  try {
+                                      signedInUser.put("artist_name", name);
+                                      signedInUser.put("name", name);
+                                      signedInUser.put("bio", bio);
+                                      signedInUser.put("location", location.isEmpty() ? "Uganda" : location);
+                                      signedInUser.put("avatar_url", photo);
+                                  } catch (Exception ignored) {}
+                                  Toast.makeText(this,"Artist profile saved.",Toast.LENGTH_LONG).show();
+                                  artistDashboard();
+                              });
+                          } catch (Exception e) {
+                              runOnUiThread(() -> Toast.makeText(this,"Profile save failed. Please try again.",Toast.LENGTH_LONG).show());
+                          }
+                      }).start();
+                  });
                   action("Back to Settings", this::artistSettings);
+              }
+
+              private EditText editField(String hint) {
+                  EditText field = new EditText(this);
+                  field.setHint(hint);
+                  field.setTextSize(15);
+                  field.setSingleLine(hint.equals("Artist name") || hint.equals("Location") || hint.startsWith("Profile photo"));
+                  field.setTextColor(white);
+                  field.setHintTextColor(muted);
+                  field.setPadding(dp(14),dp(10),dp(14),dp(10));
+                  field.setBackground(rounded(panel,12,border));
+                  return field;
               }
 
               private void artistDashboard() {
@@ -859,7 +922,7 @@ jobs:
                   new Thread(() -> {
                       // The signed-in account ID and the artist profile ID are not necessarily
                       // the same. Resolve the artist row first, then use its ID for artist_id filters.
-                      String artistRaw = getApiText("/api/db/artists?select=id,user_id,name&eq.user_id="+urlEncode(userId)+"&limit=1");
+                      String artistRaw = getApiText("/api/db/artists?select=id,user_id,name,bio,location,avatar_url&eq.user_id="+urlEncode(userId)+"&limit=1");
                       JSONArray artistRows = dataArray(artistRaw);
                       String artistId = userId;
                       if (artistRows.length() > 0) {
@@ -869,10 +932,11 @@ jobs:
                           }
                       }
                       final String resolvedArtistId = artistId;
-                      String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(resolvedArtistId)+"&order=created_at.desc&limit=100");
+                      final JSONObject resolvedArtist = artistRows.optJSONObject(0);
+                      String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
                       String walletRaw = getApiText("/api/db/artist_wallets?select=balance&eq.user_id="+urlEncode(userId)+"&limit=10");
                       String payoutsRaw = getApiText("/api/db/artist_payouts?select=id,amount,status,created_at&eq.user_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
-                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&eq.artist_id="+urlEncode(resolvedArtistId)+"&order=created_at.desc&limit=100");
+                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
                       JSONArray songs = dataArray(songsRaw);
                       JSONArray wallets = dataArray(walletRaw);
                       JSONArray payouts = dataArray(payoutsRaw);
@@ -921,6 +985,16 @@ jobs:
                       final int finalRejected = rejected;
                       runOnUiThread(() -> {
                           if(isFinishing() || signedInUser==null || !tab.equals("Profile")) return;
+                          if (resolvedArtist != null) {
+                              try {
+                                  signedInUser.put("artist_id", resolvedArtist.optString("id", resolvedArtistId));
+                                  signedInUser.put("artist_name", resolvedArtist.optString("name", artistName));
+                                  signedInUser.put("name", resolvedArtist.optString("name", artistName));
+                                  signedInUser.put("bio", resolvedArtist.optString("bio", ""));
+                                  signedInUser.put("location", resolvedArtist.optString("location", "Uganda"));
+                                  signedInUser.put("avatar_url", resolvedArtist.optString("avatar_url", ""));
+                              } catch (Exception ignored) {}
+                          }
                           content.removeAllViews();
                           heading("Artist Dashboard","Your songs, performance and earnings");
                           addArtistProfile(artistName.isEmpty()?email:artistName, email);
@@ -1565,9 +1639,16 @@ jobs:
                       if (item != null) displaySongs.add(item);
                   }
                   if ("Top Charts".equals(homeCategory) && "Home".equals(tab)) {
-                      // Top Charts ranks the larger fetched catalogue by recorded lifetime plays.
-                      java.util.Collections.sort(displaySongs, (a,b) ->
-                          Long.compare(b.optLong("plays",0), a.optLong("plays",0)));
+                      // Top Charts ranks the fetched approved catalogue by recorded lifetime plays.
+                      java.util.Collections.sort(displaySongs, (a,b) -> Long.compare(b.optLong("plays",0), a.optLong("plays",0)));
+                  } else if ("Trending".equals(homeCategory) && "Home".equals(tab)) {
+                      // Trending uses the newest dated songs first, with recorded plays as the tie-breaker.
+                      java.util.Collections.sort(displaySongs, (a,b) -> {
+                          String ad = a.optString("created_at", "");
+                          String bd = b.optString("created_at", "");
+                          int dateCompare = bd.compareTo(ad);
+                          return dateCompare != 0 ? dateCompare : Long.compare(b.optLong("plays",0), a.optLong("plays",0));
+                      });
                   } else if ("Trending".equals(homeCategory) && "Home".equals(tab)) {
                       // The current API does not expose a dated play-history endpoint. Until it does,
                       // Trending prioritizes songs released in the last 30 days, then their recorded plays.
