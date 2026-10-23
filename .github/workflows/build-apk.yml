@@ -723,7 +723,41 @@ jobs:
                   TextView amount = label(value,14,featured ? Color.WHITE : orange,true);
                   amount.setMaxLines(2);
                   box.addView(amount);
+                  box.setOnClickListener(v -> {
+                      if (title.equals("Total Earnings")) dashboardDetail("Earnings Statistics", "Total earnings recorded: UGX " + value.replace("UGX ", "") + "\n\nThis total is calculated from the wallet balance and payout records available to your account. Daily chart values will only appear when the backend provides dated earnings records.");
+                      else if (title.equals("Total Plays")) dashboardDetail("Plays Statistics", "Total recorded plays: " + value + "\n\nToday’s plays and historical daily counts require dated play records from the server. This screen will not estimate daily plays from lifetime totals.");
+                      else dashboardDetail("Available Balance", "Available balance: " + value + "\n\nUse the Withdraw button from your artist dashboard to continue through the existing withdrawal process.");
+                  });
                   return box;
+              }
+
+              private void dashboardDetail(String title, String details) {
+                  content.removeAllViews();
+                  heading(title, "Your artist performance details");
+                  card(title, details);
+                  action("Back to Artist Dashboard", this::artistDashboard);
+              }
+
+              private void artistSettings() {
+                  content.removeAllViews();
+                  heading("Settings", "Manage your NileSoniQ app and account");
+                  card("Account", signedInUser == null ? "Not signed in" : signedInUser.optString("email", "Artist account"));
+                  action("Edit Profile", this::editArtistProfile);
+                  action("Refresh account session", this::checkSession);
+                  action("Log out", this::logout);
+                  action("Back to Artist Dashboard", this::artistDashboard);
+              }
+
+              private void editArtistProfile() {
+                  content.removeAllViews();
+                  heading("Edit Profile", "Review your artist details");
+                  String name = signedInUser == null ? "" : signedInUser.optString("artist_name", signedInUser.optString("name", ""));
+                  String email = signedInUser == null ? "" : signedInUser.optString("email", "");
+                  card("Artist name", name.isEmpty() ? "No artist name is available on this session." : name);
+                  card("Email address", email);
+                  card("Profile photo", profileImageUrl().isEmpty() ? "No profile photo is linked to this account yet." : "A profile photo is linked to this account.");
+                  card("Profile editing", "Your current app API does not expose a confirmed profile-update endpoint in this workflow, so this screen will not pretend to save changes or overwrite your account details.");
+                  action("Back to Settings", this::artistSettings);
               }
 
               private void artistDashboard() {
@@ -795,6 +829,23 @@ jobs:
                           content.removeAllViews();
                           heading("Artist Dashboard","Your songs, performance and earnings");
                           addArtistProfile(artistName.isEmpty()?email:artistName, email);
+                          LinearLayout topActions = new LinearLayout(this);
+                          topActions.setOrientation(LinearLayout.HORIZONTAL);
+                          Button editProfileButton = new Button(this);
+                          editProfileButton.setText("Edit Profile"); editProfileButton.setAllCaps(false);
+                          editProfileButton.setTextColor(orange);
+                          editProfileButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+                          editProfileButton.setOnClickListener(v -> editArtistProfile());
+                          topActions.addView(editProfileButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+                          Button settingsButton = new Button(this);
+                          settingsButton.setText("⚙ Settings"); settingsButton.setAllCaps(false);
+                          settingsButton.setTextColor(orange);
+                          settingsButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+                          settingsButton.setOnClickListener(v -> artistSettings());
+                          topActions.addView(settingsButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+                          LinearLayout.LayoutParams topActionsParams = new LinearLayout.LayoutParams(-1, dp(44));
+                          topActionsParams.bottomMargin = dp(12);
+                          content.addView(topActions, topActionsParams);
                           // Dashboard summary cards follow the supplied reference while using only live API totals.
                           LinearLayout stats = new LinearLayout(this);
                           stats.setOrientation(LinearLayout.HORIZONTAL);
@@ -813,7 +864,9 @@ jobs:
                           if(songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
                               card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
                           }
+                          action("Withdraw",this::artistSettings);
                           action("Upload a song in the app",this::songUploadScreen);
+                          action("Settings",this::artistSettings);
                           action("Refresh Artist Dashboard",this::artistDashboard);
                           action("Back to Profile",() -> screen("Profile"));
                       });
