@@ -267,6 +267,20 @@ jobs:
                   return drawable;
               }
 
+              private GradientDrawable circleDrawable(int color) {
+                  GradientDrawable drawable = new GradientDrawable();
+                  drawable.setShape(GradientDrawable.OVAL);
+                  drawable.setColor(color);
+                  return drawable;
+              }
+
+              private void makeCircular(ImageView image, int fallbackColor) {
+                  image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                  image.setBackground(circleDrawable(fallbackColor));
+                  image.setClipToOutline(true);
+                  image.setAdjustViewBounds(false);
+              }
+
               private TextView label(String s, int size, int color, boolean bold) {
                   TextView v = new TextView(this);
                   v.setText(s);
@@ -287,6 +301,32 @@ jobs:
               }
 
               private void screen(String name) {
+                  try {
+                      screenUnsafe(name);
+                  } catch (Exception error) {
+                      // A broken page must not terminate the whole app; provide recovery actions.
+                      try {
+                          tab = name;
+                          if (root == null) root = column();
+                          if (content == null || content.getParent() == null) {
+                              root.removeAllViews();
+                              content = column();
+                              root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
+                              setContentView(root);
+                          } else {
+                              content.removeAllViews();
+                          }
+                          heading("This page could not open", "Your account and saved data have not been changed.");
+                          card("Try again", "There was a temporary problem opening this page. Please try again.");
+                          action("Retry page", () -> screen(name));
+                          action("Go to Home", () -> screen("Home"));
+                      } catch (Exception ignored) {
+                          Toast.makeText(this, "This page could not open. Please return to Home and try again.", Toast.LENGTH_LONG).show();
+                      }
+                  }
+              }
+
+              private void screenUnsafe(String name) {
                   // Invalidate outstanding song requests whenever a screen is rebuilt.
                   // This prevents older network responses from writing into a new screen.
                   songRequestId++;
@@ -379,7 +419,12 @@ jobs:
                   b.setAllCaps(false);
                   b.setTextColor(Color.WHITE);
                   b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(orange));
-                  b.setOnClickListener(v -> run.run());
+                  b.setOnClickListener(v -> {
+                      try { run.run(); }
+                      catch (Exception error) {
+                          Toast.makeText(this, "That action could not be completed. Please try again.", Toast.LENGTH_LONG).show();
+                      }
+                  });
                   LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,dp(48));
                   p.bottomMargin = dp(10);
                   content.addView(b,p);
@@ -746,8 +791,7 @@ jobs:
                   box.setPadding(dp(15),dp(15),dp(15),dp(15));
                   ImageView avatar = new ImageView(this);
                   avatar.setImageDrawable(null);
-                  avatar.setBackground(rounded(Color.rgb(255,224,194),40,Color.TRANSPARENT));
-                  avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                  makeCircular(avatar, Color.rgb(255,224,194));
                   TextView initial = label(artistName.isEmpty()?"N":artistName.substring(0,1).toUpperCase(Locale.ROOT),25,orange,true);
                   initial.setGravity(Gravity.CENTER);
                   LinearLayout avatarWrap = new LinearLayout(this);
@@ -781,8 +825,7 @@ jobs:
                                       avatarWrap.removeAllViews();
                                       ImageView image = new ImageView(this);
                                       image.setImageBitmap(bitmap);
-                                      image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                      image.setBackground(rounded(Color.WHITE,40,Color.TRANSPARENT));
+                                      makeCircular(image, Color.rgb(255,224,194));
                                       avatarWrap.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));
                                   }
                               });
@@ -851,8 +894,7 @@ jobs:
                   photoBox.addView(label("Artist profile picture",16,white,true));
                   gap(photoBox,8);
                   ImageView photoPreview = new ImageView(this);
-                  photoPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                  photoPreview.setBackground(rounded(Color.rgb(255,224,194),40,Color.TRANSPARENT));
+                  makeCircular(photoPreview, Color.rgb(255,224,194));
                   LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(dp(100),dp(100));
                   previewParams.gravity = Gravity.CENTER_HORIZONTAL;
                   photoBox.addView(photoPreview,previewParams);
