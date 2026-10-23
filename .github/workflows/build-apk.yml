@@ -354,9 +354,10 @@ jobs:
                       String email = signedInUser.optString("email","Account");
                       String artistName = signedInUser.optString("artist_name","");
                       card("Signed in",email + (artistName.isEmpty() ? "" : "\n"+artistName));
+                      action("Open Artist Dashboard",this::artistDashboard);
                       action("Refresh account session",this::checkSession);
                       action("Log out",this::logout);
-                      card("Artist studio","Your website account is connected. Existing artist and admin permissions remain controlled by the server.");
+                      card("Artist studio","Review your song submissions, recorded plays, wallet balance and withdrawal history. Financial figures are read from your existing account records.");
                   } else {
                       card("Sign in or create an account",
                           "Use the same email and password you use on nilesoniq.com.");
@@ -483,6 +484,129 @@ jobs:
                           Toast.makeText(this,"You have been logged out.",Toast.LENGTH_SHORT).show();
                       });
                   }).start();
+              }
+
+              private void artistDashboard() {
+                  if (signedInUser == null) {
+                      Toast.makeText(this,"Please sign in first.",Toast.LENGTH_SHORT).show();
+                      screen("Profile");
+                      return;
+                  }
+                  heading("Artist Dashboard","Your songs, performance and earnings");
+                  card("Loading dashboard…","Fetching records linked to your signed-in account.");
+                  final String userId = signedInUser.optString("id", signedInUser.optString("user_id",""));
+                  final String email = signedInUser.optString("email","Artist account");
+                  final String artistName = signedInUser.optString("artist_name", signedInUser.optString("name",""));
+                  content.removeAllViews();
+                  heading("Artist Dashboard","Your songs, performance and earnings");
+                  card("Artist profile", (artistName.isEmpty()?email:artistName+"\n"+email));
+                  card("Song submissions","Loading song statuses and play counts…");
+                  card("Earnings & withdrawals","Loading existing wallet and payout records…");
+                  new Thread(() -> {
+                      String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
+                      String walletRaw = getApiText("/api/db/artist_wallets?select=balance&eq.user_id="+urlEncode(userId)+"&limit=10");
+                      String payoutsRaw = getApiText("/api/db/artist_payouts?select=amount,status&eq.user_id="+urlEncode(userId)+"&limit=100");
+                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=amount,status&eq.artist_id="+urlEncode(userId)+"&limit=100");
+                      JSONArray songs = dataArray(songsRaw);
+                      JSONArray wallets = dataArray(walletRaw);
+                      JSONArray payouts = dataArray(payoutsRaw);
+                      JSONArray withdrawals = dataArray(withdrawalsRaw);
+                      int approved=0, pending=0, rejected=0;
+                      long plays=0;
+                      StringBuilder list = new StringBuilder();
+                      for (int i=0;i<songs.length();i++) {
+                          JSONObject song=songs.optJSONObject(i);
+                          if (song==null) continue;
+                          String status=song.optString("review_status","").toLowerCase();
+                          boolean isApproved=song.optBoolean("approved",false);
+                          if (isApproved || status.equals("approved")) approved++;
+                          else if (status.equals("rejected")) rejected++;
+                          else pending++;
+                          plays += song.optLong("plays",0);
+                          if (list.length()<6500) {
+                              if (list.length()>0) list.append("\n\n");
+                              list.append(song.optString("title","Untitled song"));
+                              list.append("\nStatus: ").append(isApproved?"Approved":(status.equals("rejected")?"Rejected":"Pending review"));
+                              list.append("\nPlays: ").append(song.optLong("plays",0));
+                          }
+                      }
+                      double balance=0, withdrawn=0;
+                      for(int i=0;i<wallets.length();i++) { JSONObject w=wallets.optJSONObject(i); if(w!=null) balance += w.optDouble("balance",0); }
+                      for(int i=0;i<payouts.length();i++) {
+                          JSONObject w=payouts.optJSONObject(i); if(w==null) continue;
+                          String st=w.optString("status","").toLowerCase();
+                          if(st.equals("completed")||st.equals("success")||st.equals("successful")||st.equals("paid")) withdrawn += w.optDouble("amount",0);
+                      }
+                      int pendingWithdrawals=0;
+                      for(int i=0;i<withdrawals.length();i++) {
+                          JSONObject w=withdrawals.optJSONObject(i); if(w==null) continue;
+                          String st=w.optString("status","").toLowerCase();
+                          if(st.equals("completed")||st.equals("success")||st.equals("successful")||st.equals("paid")) withdrawn += w.optDouble("amount",0);
+                          else if(st.equals("pending")||st.equals("processing")||st.equals("requested")) pendingWithdrawals++;
+                      }
+                      final String songSummary="Songs: "+songs.length()+"\nApproved: "+approved+"\nPending review: "+pending+"\nRejected: "+rejected+"\nRecorded plays: "+plays;
+                      final String earnings="Available balance: UGX "+money(balance)+"\nAmount withdrawn (recorded as paid): UGX "+money(withdrawn)+"\nPending withdrawal requests: "+pendingWithdrawals+"\nMinimum withdrawal: UGX 10,000";
+                      final String songList=list.length()==0?"No song records were returned for this account.":list.toString();
+                      runOnUiThread(() -> {
+                          if(isFinishing() || signedInUser==null || !tab.equals("Profile")) return;
+                          content.removeAllViews();
+                          heading("Artist Dashboard","Your songs, performance and earnings");
+                          card("Artist profile",(artistName.isEmpty()?email:artistName+"\n"+email));
+                          card("Performance & song status",songSummary);
+                          card("Earnings & withdrawals",earnings);
+                          card("My songs",songList);
+                          if(songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
+                              card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
+                          }
+                          action("Open website to upload a song",() -> {
+                              try { startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://nilesoniq.com/"))); }
+                              catch(Exception e) { Toast.makeText(this,"Could not open website.",Toast.LENGTH_SHORT).show(); }
+                          });
+                          action("Back to Profile",() -> screen("Profile"));
+                      });
+                  }).start();
+              }
+
+              private String getApiText(String path) {
+                  HttpURLConnection c=null;
+                  try {
+                      c=(HttpURLConnection)new URL(API+path).openConnection();
+                      c.setRequestMethod("GET"); c.setConnectTimeout(12000); c.setReadTimeout(12000);
+                      c.setRequestProperty("Accept","application/json");
+                      String cookie=getCookie(); if(!cookie.isEmpty()) c.setRequestProperty("Cookie",cookie);
+                      int code=c.getResponseCode();
+                      java.io.InputStream in=(code>=200&&code<400)?c.getInputStream():c.getErrorStream();
+                      if(in==null) return "ERROR HTTP "+code;
+                      BufferedReader br=new BufferedReader(new InputStreamReader(in,"UTF-8"));
+                      StringBuilder out=new StringBuilder(); String line;
+                      while((line=br.readLine())!=null) out.append(line);
+                      br.close();
+                      return code>=200&&code<300?out.toString():"ERROR HTTP "+code+": "+out;
+                  } catch(Exception e) { return "ERROR: "+e.getMessage(); }
+                  finally { if(c!=null) c.disconnect(); }
+              }
+
+              private JSONArray dataArray(String raw) {
+                  try {
+                      if(raw==null || raw.startsWith("ERROR")) return new JSONArray();
+                      Object parsed=new org.json.JSONTokener(raw).nextValue();
+                      if(parsed instanceof JSONArray) return (JSONArray)parsed;
+                      if(parsed instanceof JSONObject) {
+                          JSONObject obj=(JSONObject)parsed;
+                          JSONArray arr=obj.optJSONArray("data"); if(arr!=null) return arr;
+                          arr=obj.optJSONArray("records"); if(arr!=null) return arr;
+                      }
+                  } catch(Exception ignored) {}
+                  return new JSONArray();
+              }
+
+              private String money(double amount) {
+                  return String.format(java.util.Locale.US,"%,.0f",amount);
+              }
+
+              private String urlEncode(String value) {
+                  try { return java.net.URLEncoder.encode(value==null?"":value,"UTF-8"); }
+                  catch(Exception e) { return ""; }
               }
 
               private static class ApiResult {
