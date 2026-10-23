@@ -30,19 +30,14 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 12266719
-          accept-android-sdk-licenses: false
-
-      - name: Accept Android SDK licences
-        shell: bash
-        run: |
-          set -euxo pipefail
-          yes | sdkmanager --licenses || true
-          sdkmanager --licenses </dev/null
+          accept-android-sdk-licenses: true
+          packages: platform-tools
 
       - name: Install Android SDK packages
         shell: bash
         run: |
           set -euxo pipefail
+          sdkmanager --licenses
           sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install Gradle
