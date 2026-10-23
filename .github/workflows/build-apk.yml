@@ -96,8 +96,8 @@ jobs:
                   applicationId 'com.nilesoniq.app'
                   minSdk 23
                   targetSdk 34
-                  versionCode 5
-                  versionName '1.4'
+                  versionCode 6
+                  versionName '1.5'
               }
 
               compileOptions {
@@ -155,6 +155,8 @@ jobs:
           import android.media.AudioAttributes;
           import android.media.MediaPlayer;
           import android.content.SharedPreferences;
+          import android.net.Uri;
+          import android.database.Cursor;
           import android.text.InputType;
           import android.view.Gravity;
           import android.view.View;
@@ -191,6 +193,11 @@ jobs:
               private boolean authBusy = false;
               private String authMode = "login";
               private EditText nameInput, phoneInput, emailInput, passwordInput;
+              private EditText uploadTitleInput, uploadArtistInput, uploadGenreInput, uploadDescriptionInput;
+              private Uri selectedAudioUri, selectedCoverUri;
+              private boolean uploadBusy = false;
+              private static final int PICK_AUDIO = 6101;
+              private static final int PICK_COVER = 6102;
 
               @Override
               public void onCreate(Bundle state) {
@@ -357,7 +364,7 @@ jobs:
                       action("Open Artist Dashboard",this::artistDashboard);
                       action("Refresh account session",this::checkSession);
                       action("Log out",this::logout);
-                      card("Artist studio","Review your song submissions, recorded plays, wallet balance and withdrawal history. Financial figures are read from your existing account records.");
+                      card("Artist studio","Review your song submissions, recorded plays, wallet balance and withdrawal history, and upload songs directly in the app.");
                   } else {
                       card("Sign in or create an account",
                           "Use the same email and password you use on nilesoniq.com.");
@@ -558,12 +565,182 @@ jobs:
                           if(songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
                               card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
                           }
-                          action("Open website to upload a song",() -> {
-                              try { startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://nilesoniq.com/"))); }
-                              catch(Exception e) { Toast.makeText(this,"Could not open website.",Toast.LENGTH_SHORT).show(); }
-                          });
+                          action("Upload a song in the app",this::songUploadScreen);
+                          action("Refresh Artist Dashboard",this::artistDashboard);
                           action("Back to Profile",() -> screen("Profile"));
                       });
+                  }).start();
+              }
+
+              private void songUploadScreen() {
+                  if (signedInUser == null) {
+                      Toast.makeText(this,"Please sign in first.",Toast.LENGTH_SHORT).show();
+                      screen("Profile");
+                      return;
+                  }
+                  content.removeAllViews();
+                  heading("Upload a song","Choose your audio file and submit it for admin review. It will not be public until approved.");
+                  uploadTitleInput = field("Song title (required)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                  content.addView(uploadTitleInput,new LinearLayout.LayoutParams(-1,dp(52)));
+                  uploadArtistInput = field("Artist name (required)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+                  String display = signedInUser.optString("artist_name",signedInUser.optString("name",""));
+                  if (!display.isEmpty()) uploadArtistInput.setText(display);
+                  content.addView(uploadArtistInput,new LinearLayout.LayoutParams(-1,dp(52)));
+                  uploadGenreInput = field("Genre (e.g. Afrobeat)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+                  content.addView(uploadGenreInput,new LinearLayout.LayoutParams(-1,dp(52)));
+                  uploadDescriptionInput = field("Description (optional)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                  content.addView(uploadDescriptionInput,new LinearLayout.LayoutParams(-1,dp(52)));
+                  gap(content,8);
+                  card("Audio file",selectedAudioUri == null ? "No audio selected. MP3, WAV, or FLAC recommended." : getDisplayName(selectedAudioUri));
+                  action("Choose audio file",() -> pickFile(PICK_AUDIO));
+                  card("Cover artwork (optional)",selectedCoverUri == null ? "No cover selected." : getDisplayName(selectedCoverUri));
+                  action("Choose cover artwork",() -> pickFile(PICK_COVER));
+                  card("Before submitting","You confirm that you own or have permission to upload this music. The song will be saved as Pending review and will only appear publicly after admin approval.");
+                  action(uploadBusy ? "Uploading…" : "Submit song for review",this::submitSongUpload);
+                  action("Back to Artist Dashboard",this::artistDashboard);
+              }
+
+              private void pickFile(int requestCode) {
+                  try {
+                      android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+                      intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                      intent.setType(requestCode == PICK_AUDIO ? "audio/*" : "image/*");
+                      startActivityForResult(intent,requestCode);
+                  } catch (Exception e) {
+                      Toast.makeText(this,"Could not open the file picker.",Toast.LENGTH_LONG).show();
+                  }
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+                  super.onActivityResult(requestCode,resultCode,data);
+                  if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+                  Uri uri = data.getData();
+                  try { getContentResolver().takePersistableUriPermission(uri, data.getFlags() & (android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)); }
+                  catch (Exception ignored) {}
+                  if (requestCode == PICK_AUDIO) selectedAudioUri = uri;
+                  else if (requestCode == PICK_COVER) selectedCoverUri = uri;
+                  if (tab.equals("Profile")) songUploadScreen();
+              }
+
+              private String getDisplayName(Uri uri) {
+                  if (uri == null) return "Not selected";
+                  String name = null;
+                  Cursor cursor = null;
+                  try {
+                      cursor = getContentResolver().query(uri,null,null,null,null);
+                      if (cursor != null && cursor.moveToFirst()) {
+                          int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                          if (index >= 0) name = cursor.getString(index);
+                      }
+                  } catch (Exception ignored) {} finally { if (cursor != null) cursor.close(); }
+                  return name == null || name.trim().isEmpty() ? uri.getLastPathSegment() : name;
+              }
+
+              private String safeFileName(String original, String fallback) {
+                  String name = original == null ? fallback : original;
+                  name = name.replaceAll("[^A-Za-z0-9._-]", "_");
+                  if (name.length() > 100) name = name.substring(name.length()-100);
+                  return name.isEmpty() ? fallback : name;
+              }
+
+              private String uploadObject(Uri uri, String bucket, String userId, String fallback) throws Exception {
+                  if (uri == null) return "";
+                  String name = safeFileName(getDisplayName(uri),fallback);
+                  String objectPath = userId + "/" + System.currentTimeMillis() + "_" + name;
+                  java.net.URL url = new URL(API + "/api/storage/upload?bucket=" + bucket + "&path=" + urlEncode(objectPath));
+                  HttpURLConnection c = (HttpURLConnection)url.openConnection();
+                  try {
+                      c.setRequestMethod("POST");
+                      c.setConnectTimeout(20000);
+                      c.setReadTimeout(120000);
+                      c.setDoOutput(true);
+                      c.setRequestProperty("Accept","application/json");
+                      c.setRequestProperty("Content-Type",getContentResolver().getType(uri) == null ? "application/octet-stream" : getContentResolver().getType(uri));
+                      String cookie = getCookie();
+                      if (!cookie.isEmpty()) c.setRequestProperty("Cookie",cookie);
+                      try (java.io.InputStream in = getContentResolver().openInputStream(uri); OutputStream out = c.getOutputStream()) {
+                          if (in == null) throw new Exception("Could not read selected file.");
+                          byte[] buffer = new byte[32768];
+                          int n;
+                          long total = 0;
+                          while ((n = in.read(buffer)) != -1) {
+                              total += n;
+                              if (total > 150L * 1024L * 1024L) throw new Exception("File is larger than 150 MB. Please choose a smaller file.");
+                              out.write(buffer,0,n);
+                          }
+                      }
+                      int code = c.getResponseCode();
+                      java.io.InputStream stream = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+                      StringBuilder response = new StringBuilder();
+                      if (stream != null) {
+                          BufferedReader reader = new BufferedReader(new InputStreamReader(stream,"UTF-8"));
+                          String line; while ((line = reader.readLine()) != null) response.append(line);
+                          reader.close();
+                      }
+                      if (code < 200 || code >= 300) {
+                          JSONObject err;
+                          try { err = new JSONObject(response.toString()); } catch (Exception e) { err = new JSONObject(); }
+                          throw new Exception(err.optString("error","File upload failed (HTTP " + code + ")."));
+                      }
+                      return API + "/api/storage/public/" + bucket + "/" + objectPath;
+                  } finally { c.disconnect(); }
+              }
+
+              private void submitSongUpload() {
+                  if (uploadBusy) return;
+                  if (signedInUser == null) {
+                      Toast.makeText(this,"Please sign in first.",Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  String songTitle = uploadTitleInput == null ? "" : uploadTitleInput.getText().toString().trim();
+                  String songArtist = uploadArtistInput == null ? "" : uploadArtistInput.getText().toString().trim();
+                  String genre = uploadGenreInput == null ? "" : uploadGenreInput.getText().toString().trim();
+                  String description = uploadDescriptionInput == null ? "" : uploadDescriptionInput.getText().toString().trim();
+                  if (songTitle.isEmpty() || songArtist.isEmpty() || selectedAudioUri == null) {
+                      Toast.makeText(this,"Enter the song title and artist, then choose an audio file.",Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  uploadBusy = true;
+                  songUploadScreen();
+                  new Thread(() -> {
+                      try {
+                          String userId = signedInUser.optString("id",signedInUser.optString("user_id",""));
+                          if (userId.isEmpty()) throw new Exception("Your account ID could not be found. Please sign in again.");
+                          String audioUrl = uploadObject(selectedAudioUri,"audio",userId,"song_audio");
+                          String coverUrl = selectedCoverUri == null ? "" : uploadObject(selectedCoverUri,"covers",userId,"song_cover");
+                          JSONObject row = new JSONObject();
+                          row.put("title",songTitle);
+                          row.put("artist",songArtist);
+                          row.put("artist_id",userId);
+                          row.put("audio_url",audioUrl);
+                          row.put("file_url",audioUrl);
+                          if (!coverUrl.isEmpty()) row.put("cover_url",coverUrl);
+                          if (!genre.isEmpty()) row.put("genre",genre);
+                          if (!description.isEmpty()) row.put("description",description);
+                          row.put("terms_accepted",true);
+                          ApiResult result = request("POST","/api/db/songs",row);
+                          if (result.code < 200 || result.code >= 300 || result.body == null || result.body.optJSONArray("data") == null) {
+                              String error = result.body == null ? "Song details could not be saved." : result.body.optString("error","Song details could not be saved.");
+                              throw new Exception(error);
+                          }
+                          runOnUiThread(() -> {
+                              uploadBusy = false;
+                              selectedAudioUri = null;
+                              selectedCoverUri = null;
+                              Toast.makeText(this,"Song uploaded successfully and sent for admin review.",Toast.LENGTH_LONG).show();
+                              artistDashboard();
+                          });
+                      } catch (Exception e) {
+                          String message = e.getMessage() == null ? "Upload failed. Please try again." : e.getMessage();
+                          runOnUiThread(() -> {
+                              uploadBusy = false;
+                              if (!isFinishing()) {
+                                  songUploadScreen();
+                                  Toast.makeText(this,message,Toast.LENGTH_LONG).show();
+                              }
+                          });
+                      }
                   }).start();
               }
 
