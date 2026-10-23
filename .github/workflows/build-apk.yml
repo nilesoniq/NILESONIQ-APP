@@ -1,67 +1,393 @@
 name: NileSoniQ FINAL GREEN
-on: [push, workflow_dispatch]
+
+on:
+push:
+workflow_dispatch:
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+build:
+runs-on: ubuntu-latest
 
-      - name: Install SDK and Build
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y wget unzip > /dev/null
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          cd $HOME/android-sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-11076708_latest.zip
-          mv cmdline-tools latest
-          export ANDROID_HOME=$HOME/android-sdk
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" > /dev/null
-          
-          cd $GITHUB_WORKSPACE
-          pip install Pillow -q
-          python3 << 'PY'
-          import pathlib, shutil
-          import os
-          os.system("rm -rf app build settings.gradle build.gradle")
-          pathlib.Path("app/src/main/java/com/nilesoniq/app").mkdir(parents=True, exist_ok=True)
-          pathlib.Path("app/src/main/res/layout").mkdir(parents=True, exist_ok=True)
-          pathlib.Path("app/src/main/res/mipmap-xxxhdpi").mkdir(parents=True, exist_ok=True)
-          pathlib.Path("app/src/main/res/values").mkdir(parents=True, exist_ok=True)
-          from PIL import Image, ImageDraw, ImageFont
-          W=1024; img=Image.new('RGB',(W,W),(255,122,0)); d=ImageDraw.Draw(img)
-          try: f=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 600)
-          except: f=ImageFont.load_default()
-          d.text((512,500), "N", fill="white", font=f, anchor="mm")
-          img.save("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png")
-          open("app/src/main/res/values/strings.xml","w").write('<resources><string name="app_name">NileSoniQ</string></resources>')
-          open("app/src/main/AndroidManifest.xml","w").write('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><application android:label="NileSoniQ" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.Material.Light.NoActionBar"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".ArtistEarningsActivity"/><activity android:name=".UploadActivity"/></application></manifest>')
-          open("app/src/main/res/layout/activity_main.xml","w").write('<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"><TextView android:text="NileSoniQ Native - Songs, Earnings, Upload" android:background="#FF7A00" android:textColor="#FFF" android:padding="16dp" android:layout_width="match_parent" android:layout_height="wrap_content"/><androidx.recyclerview.widget.RecyclerView android:id="@+id/recycler" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/><LinearLayout android:orientation="horizontal" android:background="#FF7A00" android:layout_width="match_parent" android:layout_height="60dp"><Button android:id="@+id/btnArtist" android:text="Earnings" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"/><Button android:id="@+id/btnUpload" android:text="Upload" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"/></LinearLayout></LinearLayout>')
-          open("app/src/main/res/layout/activity_artist.xml","w").write('<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="16dp" android:layout_width="match_parent" android:layout_height="match_parent"><TextView android:text="Earnings: UGX 2,450,000 | 124K Plays | Balance 850K" android:layout_width="wrap_content" android:layout_height="wrap_content"/><Button android:text="Withdraw Mobile Money" android:layout_marginTop="20dp" android:layout_width="match_parent" android:layout_height="wrap_content"/></LinearLayout>')
-          open("app/src/main/res/layout/activity_upload.xml","w").write('<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="16dp" android:layout_width="match_parent" android:layout_height="match_parent"><TextView android:text="Upload Song" android:textSize="20sp" android:layout_width="wrap_content" android:layout_height="wrap_content"/><EditText android:hint="Title" android:layout_width="match_parent" android:layout_height="wrap_content"/><Button android:text="Upload for Review" android:layout_width="match_parent" android:layout_height="wrap_content"/></LinearLayout>')
-          open("app/src/main/java/com/nilesoniq/app/MainActivity.java","w").write('package com.nilesoniq.app;import android.content.Intent;import android.os.Bundle;import androidx.appcompat.app.AppCompatActivity;import androidx.recyclerview.widget.LinearLayoutManager;import androidx.recyclerview.widget.RecyclerView;public class MainActivity extends AppCompatActivity{protected void onCreate(Bundle b){super.onCreate(b);setContentView(R.layout.activity_main);RecyclerView rv=findViewById(R.id.recycler);rv.setLayoutManager(new LinearLayoutManager(this));rv.setAdapter(new RecyclerView.Adapter(){String[] s={"Quinamino - Azawi","Sitya Loss"};public RecyclerView.ViewHolder onCreateViewHolder(android.view.ViewGroup p,int t){android.widget.TextView tv=new android.widget.TextView(p.getContext());tv.setPadding(30,40,30,40);return new RecyclerView.ViewHolder(tv){};}public void onBindViewHolder(RecyclerView.ViewHolder h,int i){((android.widget.TextView)h.itemView).setText(s[i]);}public int getItemCount(){return s.length;}});findViewById(R.id.btnArtist).setOnClickListener(v->startActivity(new Intent(this,ArtistEarningsActivity.class)));findViewById(R.id.btnUpload).setOnClickListener(v->startActivity(new Intent(this,UploadActivity.class)));}}')
-          open("app/src/main/java/com/nilesoniq/app/ArtistEarningsActivity.java","w").write('package com.nilesoniq.app;import android.os.Bundle;import androidx.appcompat.app.AppCompatActivity;public class ArtistEarningsActivity extends AppCompatActivity{protected void onCreate(Bundle b){super.onCreate(b);setContentView(R.layout.activity_artist);}}')
-          open("app/src/main/java/com/nilesoniq/app/UploadActivity.java","w").write('package com.nilesoniq.app;import android.os.Bundle;import androidx.appcompat.app.AppCompatActivity;public class UploadActivity extends AppCompatActivity{protected void onCreate(Bundle b){super.onCreate(b);setContentView(R.layout.activity_upload);}}')
-          open("app/build.gradle","w").write("plugins { id 'com.android.application' } android { namespace 'com.nilesoniq.app' compileSdk 34 defaultConfig { applicationId 'com.nilesoniq.app' minSdk 21 targetSdk 34 versionCode 37 versionName '1.0' } compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 } } dependencies { implementation 'androidx.appcompat:appcompat:1.6.1'; implementation 'androidx.recyclerview:recyclerview:1.3.2'; }")
-          open("build.gradle","w").write("buildscript { repositories { google(); mavenCentral() } dependencies { classpath 'com.android.tools.build:gradle:8.1.4' } } allprojects { repositories { google(); mavenCentral() } }")
-          open("settings.gradle","w").write("include ':app'")
-          PY
-          
-          export ANDROID_HOME=$HOME/android-sdk
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
-          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
-          unzip -q gradle-8.5-bin.zip
-          export PATH=$PWD/gradle-8.5/bin:$PATH
-          gradle assembleDebug --no-daemon
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: NileSoniQ-FINAL-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+  - name: Set up Java 17
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
+
+  - name: Set up Gradle
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.5'
+
+  - name: Install Android SDK
+    uses: android-actions/setup-android@v3
+
+  - name: Install Android SDK packages
+    run: |
+      sdkmanager --install \
+        "platform-tools" \
+        "platforms;android-34" \
+        "build-tools;34.0.0"
+
+  - name: Configure Android project
+    run: |
+      set -e
+
+      mkdir -p app/src/main/java/com/nilesoniq/app
+      mkdir -p app/src/main/res/layout
+      mkdir -p app/src/main/res/values
+      mkdir -p app/src/main/res/mipmap-mdpi
+      mkdir -p app/src/main/res/mipmap-hdpi
+      mkdir -p app/src/main/res/mipmap-xhdpi
+      mkdir -p app/src/main/res/mipmap-xxhdpi
+      mkdir -p app/src/main/res/mipmap-xxxhdpi
+
+      cat > gradle.properties <<'EOF'
+      android.useAndroidX=true
+      org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+      EOF
+
+      cat > settings.gradle <<'EOF'
+      pluginManagement {
+          repositories {
+              google()
+              mavenCentral()
+              gradlePluginPortal()
+          }
+      }
+
+      dependencyResolutionManagement {
+          repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+          repositories {
+              google()
+              mavenCentral()
+          }
+      }
+
+      rootProject.name = 'NileSoniQ'
+      include ':app'
+      EOF
+
+      cat > build.gradle <<'EOF'
+      plugins {
+          id 'com.android.application' version '8.1.4' apply false
+      }
+      EOF
+
+      cat > app/build.gradle <<'EOF'
+      plugins {
+          id 'com.android.application'
+      }
+
+      android {
+          namespace 'com.nilesoniq.app'
+          compileSdk 34
+
+          defaultConfig {
+              applicationId 'com.nilesoniq.app'
+              minSdk 21
+              targetSdk 34
+              versionCode 37
+              versionName '1.0'
+          }
+
+          compileOptions {
+              sourceCompatibility JavaVersion.VERSION_17
+              targetCompatibility JavaVersion.VERSION_17
+          }
+      }
+
+      dependencies {
+          implementation 'androidx.appcompat:appcompat:1.6.1'
+          implementation 'androidx.recyclerview:recyclerview:1.3.2'
+      }
+      EOF
+
+      cat > app/src/main/res/values/strings.xml <<'EOF'
+      <resources>
+          <string name="app_name">NileSoniQ</string>
+      </resources>
+      EOF
+
+      cat > app/src/main/AndroidManifest.xml <<'EOF'
+      <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.INTERNET" />
+
+          <application
+              android:allowBackup="true"
+              android:label="@string/app_name"
+              android:icon="@mipmap/ic_launcher"
+              android:theme="@style/AppTheme">
+
+              <activity
+                  android:name=".MainActivity"
+                  android:exported="true">
+                  <intent-filter>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent-filter>
+              </activity>
+
+              <activity android:name=".ArtistEarningsActivity" />
+              <activity android:name=".UploadActivity" />
+          </application>
+      </manifest>
+      EOF
+
+      cat > app/src/main/res/values/styles.xml <<'EOF'
+      <resources>
+          <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+              <item name="colorPrimary">#FF7A00</item>
+              <item name="colorPrimaryDark">#D96500</item>
+              <item name="colorAccent">#FF7A00</item>
+          </style>
+      </resources>
+      EOF
+
+      cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+      <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+          android:orientation="vertical"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent">
+
+          <TextView
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:text="NileSoniQ"
+              android:textSize="24sp"
+              android:textStyle="bold"
+              android:textColor="#FFFFFF"
+              android:background="#FF7A00"
+              android:padding="16dp" />
+
+          <androidx.recyclerview.widget.RecyclerView
+              android:id="@+id/recycler"
+              android:layout_width="match_parent"
+              android:layout_height="0dp"
+              android:layout_weight="1" />
+
+          <LinearLayout
+              android:orientation="horizontal"
+              android:background="#FF7A00"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content">
+
+              <Button
+                  android:id="@+id/btnArtist"
+                  android:text="Earnings"
+                  android:layout_width="0dp"
+                  android:layout_weight="1"
+                  android:layout_height="wrap_content" />
+
+              <Button
+                  android:id="@+id/btnUpload"
+                  android:text="Upload"
+                  android:layout_width="0dp"
+                  android:layout_weight="1"
+                  android:layout_height="wrap_content" />
+          </LinearLayout>
+      </LinearLayout>
+      EOF
+
+      cat > app/src/main/res/layout/activity_artist.xml <<'EOF'
+      <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+          android:orientation="vertical"
+          android:padding="16dp"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent">
+
+          <TextView
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:text="Artist Earnings"
+              android:textSize="24sp"
+              android:textStyle="bold" />
+
+          <TextView
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:layout_marginTop="16dp"
+              android:text="Connect your account to view your actual earnings and balance." />
+
+          <Button
+              android:id="@+id/btnWithdraw"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:layout_marginTop="20dp"
+              android:text="Withdraw Mobile Money" />
+      </LinearLayout>
+      EOF
+
+      cat > app/src/main/res/layout/activity_upload.xml <<'EOF'
+      <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+          android:orientation="vertical"
+          android:padding="16dp"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent">
+
+          <TextView
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:text="Upload Song"
+              android:textSize="24sp"
+              android:textStyle="bold" />
+
+          <EditText
+              android:id="@+id/songTitle"
+              android:hint="Song title"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content" />
+
+          <Button
+              android:id="@+id/btnChooseSong"
+              android:text="Choose Audio File"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content" />
+
+          <Button
+              android:id="@+id/btnSubmitSong"
+              android:text="Upload for Review"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content" />
+      </LinearLayout>
+      EOF
+
+      cat > app/src/main/java/com/nilesoniq/app/MainActivity.java <<'EOF'
+      package com.nilesoniq.app;
+
+      import android.content.Intent;
+      import android.os.Bundle;
+      import android.widget.TextView;
+      import androidx.appcompat.app.AppCompatActivity;
+      import androidx.recyclerview.widget.LinearLayoutManager;
+      import androidx.recyclerview.widget.RecyclerView;
+
+      public class MainActivity extends AppCompatActivity {
+          @Override
+          protected void onCreate(Bundle state) {
+              super.onCreate(state);
+              setContentView(R.layout.activity_main);
+
+              RecyclerView rv = findViewById(R.id.recycler);
+              rv.setLayoutManager(new LinearLayoutManager(this));
+
+              String[] songs = {
+                  "NileSoniQ — Explore Songs",
+                  "Sign in to discover music"
+              };
+
+              rv.setAdapter(new RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(
+                          android.view.ViewGroup parent, int type) {
+                      TextView tv = new TextView(parent.getContext());
+                      tv.setPadding(30, 40, 30, 40);
+                      tv.setTextSize(18);
+                      return new RecyclerView.ViewHolder(tv) {};
+                  }
+
+                  @Override
+                  public void onBindViewHolder(
+                          RecyclerView.ViewHolder holder, int position) {
+                      ((TextView) holder.itemView).setText(songs[position]);
+                  }
+
+                  @Override
+                  public int getItemCount() {
+                      return songs.length;
+                  }
+              });
+
+              findViewById(R.id.btnArtist).setOnClickListener(
+                  v -> startActivity(
+                      new Intent(this, ArtistEarningsActivity.class)));
+
+              findViewById(R.id.btnUpload).setOnClickListener(
+                  v -> startActivity(
+                      new Intent(this, UploadActivity.class)));
+          }
+      }
+      EOF
+
+      cat > app/src/main/java/com/nilesoniq/app/ArtistEarningsActivity.java <<'EOF'
+      package com.nilesoniq.app;
+
+      import android.os.Bundle;
+      import androidx.appcompat.app.AppCompatActivity;
+
+      public class ArtistEarningsActivity extends AppCompatActivity {
+          @Override
+          protected void onCreate(Bundle state) {
+              super.onCreate(state);
+              setContentView(R.layout.activity_artist);
+          }
+      }
+      EOF
+
+      cat > app/src/main/java/com/nilesoniq/app/UploadActivity.java <<'EOF'
+      package com.nilesoniq.app;
+
+      import android.os.Bundle;
+      import androidx.appcompat.app.AppCompatActivity;
+
+      public class UploadActivity extends AppCompatActivity {
+          @Override
+          protected void onCreate(Bundle state) {
+              super.onCreate(state);
+              setContentView(R.layout.activity_upload);
+          }
+      }
+      EOF
+
+  - name: Generate launcher icons
+    run: |
+      python3 -m pip install --quiet Pillow
+
+      python3 <<'PY'
+      from PIL import Image, ImageDraw, ImageFont
+      from pathlib import Path
+
+      sizes = {
+          "mipmap-mdpi": 48,
+          "mipmap-hdpi": 72,
+          "mipmap-xhdpi": 96,
+          "mipmap-xxhdpi": 144,
+          "mipmap-xxxhdpi": 192,
+      }
+
+      try:
+          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          ImageFont.truetype(font_path, 20)
+      except OSError:
+          font_path = None
+
+      for folder, size in sizes.items():
+          image = Image.new("RGB", (size, size), "#FF7A00")
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.truetype(font_path, int(size * 0.65)) if font_path else ImageFont.load_default()
+          draw.text((size / 2, size / 2), "N", fill="white", font=font, anchor="mm")
+          output = Path("app/src/main/res") / folder / "ic_launcher.png"
+          image.save(output)
+
+      print("Launcher icons generated.")
+      PY
+
+  - name: Build debug APK
+    run: gradle --no-daemon assembleDebug
+
+  - name: Verify APK
+    run: |
+      test -f app/build/outputs/apk/debug/app-debug.apk
+      ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+  - name: Upload APK artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: NileSoniQ-FINAL-APK
+      path: app/build/outputs/apk/debug/app-debug.apk
+      if-no-files-found: error
+      retention-days: 14
