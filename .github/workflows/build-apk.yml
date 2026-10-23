@@ -787,6 +787,9 @@ jobs:
                       final String songSummary="Songs: "+songs.length()+"\nApproved: "+approved+"\nPending review: "+pending+"\nRejected: "+rejected+"\nRecorded plays: "+plays;
                       final String earnings="Available balance: UGX "+money(balance)+"\nAmount withdrawn (recorded as paid): UGX "+money(withdrawn)+"\nPending withdrawal requests: "+pendingWithdrawals+"\nMinimum withdrawal: UGX 10,000";
                       final String songList=list.length()==0?"No song records were returned for this account.":list.toString();
+                      final double finalBalance = balance;
+                      final double finalWithdrawn = withdrawn;
+                      final long finalPlays = plays;
                       runOnUiThread(() -> {
                           if(isFinishing() || signedInUser==null || !tab.equals("Profile")) return;
                           content.removeAllViews();
@@ -796,11 +799,11 @@ jobs:
                           LinearLayout stats = new LinearLayout(this);
                           stats.setOrientation(LinearLayout.HORIZONTAL);
                           stats.setGravity(Gravity.CENTER_VERTICAL);
-                          stats.addView(statCard("Total Earnings", "UGX " + money(withdrawn + balance), true), new LinearLayout.LayoutParams(0,-1,1));
+                          stats.addView(statCard("Total Earnings", "UGX " + money(finalWithdrawn + finalBalance), true), new LinearLayout.LayoutParams(0,-1,1));
                           LinearLayout.LayoutParams statGap = new LinearLayout.LayoutParams(0,-1,1);
                           statGap.leftMargin = dp(7); statGap.rightMargin = dp(7);
-                          stats.addView(statCard("Total Plays", String.valueOf(plays), false), statGap);
-                          stats.addView(statCard("Balance Available", "UGX " + money(balance), false), new LinearLayout.LayoutParams(0,-1,1));
+                          stats.addView(statCard("Total Plays", String.valueOf(finalPlays), false), statGap);
+                          stats.addView(statCard("Balance Available", "UGX " + money(finalBalance), false), new LinearLayout.LayoutParams(0,-1,1));
                           LinearLayout.LayoutParams statsParams = new LinearLayout.LayoutParams(-1,dp(112));
                           statsParams.bottomMargin = dp(14);
                           content.addView(stats,statsParams);
