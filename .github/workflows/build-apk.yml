@@ -581,15 +581,11 @@ jobs:
                   content.removeAllViews();
                   heading("Upload a song","Choose your audio file and submit it for admin review. It will not be public until approved.");
                   uploadTitleInput = field("Song title (required)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-                  content.addView(uploadTitleInput,new LinearLayout.LayoutParams(-1,dp(52)));
                   uploadArtistInput = field("Artist name (required)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
                   String display = signedInUser.optString("artist_name",signedInUser.optString("name",""));
                   if (!display.isEmpty()) uploadArtistInput.setText(display);
-                  content.addView(uploadArtistInput,new LinearLayout.LayoutParams(-1,dp(52)));
                   uploadGenreInput = field("Genre (e.g. Afrobeat)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-                  content.addView(uploadGenreInput,new LinearLayout.LayoutParams(-1,dp(52)));
                   uploadDescriptionInput = field("Description (optional)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-                  content.addView(uploadDescriptionInput,new LinearLayout.LayoutParams(-1,dp(52)));
                   gap(content,8);
                   card("Audio file",selectedAudioUri == null ? "No audio selected. MP3, WAV, or FLAC recommended." : getDisplayName(selectedAudioUri));
                   action("Choose audio file",() -> pickFile(PICK_AUDIO));
