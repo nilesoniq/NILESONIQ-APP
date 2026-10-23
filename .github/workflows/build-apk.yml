@@ -192,6 +192,7 @@ jobs:
           import android.widget.ScrollView;
           import android.widget.TextView;
           import android.widget.Toast;
+          import android.util.Log;
           import org.json.JSONArray;
           import org.json.JSONObject;
           import java.io.BufferedReader;
@@ -303,8 +304,9 @@ jobs:
               private void screen(String name) {
                   try {
                       screenUnsafe(name);
-                  } catch (Exception error) {
-                      // A broken page must not terminate the whole app; provide recovery actions.
+                  } catch (Throwable error) {
+                      // Record the real runtime failure and keep the activity alive when possible.
+                      Log.e("NileSoniQ", "Could not open tab: " + name, error);
                       try {
                           tab = name;
                           if (root == null) root = column();
@@ -317,11 +319,12 @@ jobs:
                               content.removeAllViews();
                           }
                           heading("This page could not open", "Your account and saved data have not been changed.");
-                          card("Try again", "There was a temporary problem opening this page. Please try again.");
+                          card("Temporary page error", "The app caught an error while opening this page. Try again or return Home.");
                           action("Retry page", () -> screen(name));
                           action("Go to Home", () -> screen("Home"));
-                      } catch (Exception ignored) {
-                          Toast.makeText(this, "This page could not open. Please return to Home and try again.", Toast.LENGTH_LONG).show();
+                      } catch (Throwable recoveryError) {
+                          Log.e("NileSoniQ", "Could not recover tab: " + name, recoveryError);
+                          try { Toast.makeText(this, "This page could not open. Please return to Home and try again.", Toast.LENGTH_LONG).show(); } catch (Throwable ignored) {}
                       }
                   }
               }
@@ -545,16 +548,73 @@ jobs:
               }
 
               private void playerScreen() {
-                  heading("Music player","Listen to songs from NileSoniQ.");
-                  if (audioUrl.isEmpty()) {
-                      card("Ready to play","The player opens directly here. Choose any song from Home or Discover and playback will start in this player.");
-                  } else {
-                      card(title,artist + (preparing ? "\nPreparing audio…" :
-                          playing ? "\nPlaying now" : "\nPaused"));
-                      action(preparing ? "Preparing…" : playing ? "Pause" : "Play / Resume",
+                  heading("Music player", "Choose a song below or control your current playback.");
+                  if (!audioUrl.isEmpty()) {
+                      card(title.isEmpty() ? "Now playing" : title,
+                          (artist.isEmpty() ? "NileSoniQ" : artist) +
+                          (preparing ? "\nPreparing audio…" : playing ? "\nPlaying now" : "\nPaused"));
+                      action(preparing ? "Preparing audio…" : playing ? "Pause playback" : "Play / Resume",
                           this::toggle);
-                      action("Stop playback",this::stopPlayback);
+                      action("Stop playback", this::stopPlayback);
+                  } else {
+                      card("Nothing playing yet", "Select any approved song below to start listening.");
                   }
+
+                  action("Refresh song list", this::loadPlayerSongs);
+                  LinearLayout results = column();
+                  content.addView(results);
+                  results.addView(label("Loading approved songs…", 14, muted, false));
+                  loadPlayerSongsInto(results);
+              }
+
+              private void loadPlayerSongs() {
+                  if (!"Player".equals(tab) || content == null) return;
+                  // Rebuild the player tab so the current controls and live catalogue are refreshed.
+                  screen("Player");
+              }
+
+              private void loadPlayerSongsInto(LinearLayout results) {
+                  new Thread(() -> {
+                      String raw = getApiText("/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url,file_url,created_at,approved&eq.approved=1&order=created_at.desc&limit=100");
+                      JSONArray songs = dataArray(raw);
+                      runOnUiThread(() -> {
+                          try {
+                              if (isFinishing() || !"Player".equals(tab) || results.getParent() == null) return;
+                              results.removeAllViews();
+                              if (songs.length() == 0) {
+                                  results.addView(label("No songs could be loaded. Check your connection and tap Refresh song list.", 14, muted, false));
+                                  return;
+                              }
+                              for (int i = 0; i < songs.length(); i++) {
+                                  JSONObject song = songs.optJSONObject(i);
+                                  if (song == null) continue;
+                                  String songTitle = song.optString("title", "Untitled song");
+                                  String songArtist = song.optString("artist", "Unknown artist");
+                                  LinearLayout row = column();
+                                  row.setPadding(dp(13), dp(12), dp(13), dp(12));
+                                  row.setBackground(rounded(Color.WHITE, 14, border));
+                                  row.addView(label(songTitle, 16, white, true));
+                                  gap(row, 4);
+                                  row.addView(label(songArtist + " · " + song.optString("genre", "Music"), 12, muted, false));
+                                  gap(row, 8);
+                                  Button playButton = new Button(this);
+                                  playButton.setText("▶  Play song");
+                                  playButton.setAllCaps(false);
+                                  playButton.setOnClickListener(v -> playSong(song));
+                                  row.addView(playButton, new LinearLayout.LayoutParams(-1, dp(44)));
+                                  LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2);
+                                  rowParams.bottomMargin = dp(10);
+                                  results.addView(row, rowParams);
+                              }
+                          } catch (Throwable error) {
+                              Log.e("NileSoniQ", "Could not render player song list", error);
+                              try {
+                                  results.removeAllViews();
+                                  results.addView(label("The player list had a display problem. Tap Refresh song list to try again.", 14, muted, false));
+                              } catch (Throwable ignored) {}
+                          }
+                      });
+                  }).start();
               }
 
               private void community() {
