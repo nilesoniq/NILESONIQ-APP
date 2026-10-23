@@ -858,15 +858,78 @@ jobs:
                           LinearLayout.LayoutParams statsParams = new LinearLayout.LayoutParams(-1,dp(112));
                           statsParams.bottomMargin = dp(14);
                           content.addView(stats,statsParams);
-                          card("Performance & song status",songSummary);
+                          // Earnings performance panel styled after the supplied artist dashboard reference.
+                          LinearLayout chartPanel = column();
+                          chartPanel.setBackground(rounded(Color.WHITE,16,border));
+                          chartPanel.setElevation(dp(2));
+                          chartPanel.setPadding(dp(15),dp(14),dp(15),dp(14));
+                          LinearLayout chartTitleRow = new LinearLayout(this);
+                          chartTitleRow.setGravity(Gravity.CENTER_VERTICAL);
+                          chartTitleRow.addView(label("Earnings — Last 7 Days",17,white,true),new LinearLayout.LayoutParams(0,-2,1));
+                          TextView chartPeriod = label("7 days",12,orange,true);
+                          chartTitleRow.addView(chartPeriod);
+                          chartPanel.addView(chartTitleRow);
+                          gap(chartPanel,12);
+                          TextView chartMessage = label("Daily earnings history is not available from the current API. Connect dated earnings records to show the real orange line chart here.",12,muted,false);
+                          chartMessage.setPadding(dp(2),dp(12),dp(2),dp(12));
+                          chartPanel.addView(chartMessage);
+                          LinearLayout.LayoutParams chartParams = new LinearLayout.LayoutParams(-1,-2);
+                          chartParams.bottomMargin = dp(14);
+                          content.addView(chartPanel,chartParams);
+
+                          // Recent song activity: only show real song titles and play counts returned by the API.
+                          LinearLayout recentPanel = column();
+                          recentPanel.setBackground(rounded(Color.WHITE,16,border));
+                          recentPanel.setElevation(dp(2));
+                          recentPanel.setPadding(dp(15),dp(14),dp(15),dp(8));
+                          LinearLayout recentHeading = new LinearLayout(this);
+                          recentHeading.setGravity(Gravity.CENTER_VERTICAL);
+                          recentHeading.addView(label("Recent Transactions",18,white,true),new LinearLayout.LayoutParams(0,-2,1));
+                          TextView seeAll = label("See all",14,orange,true);
+                          seeAll.setOnClickListener(v -> dashboardDetail("Recent Transactions", songList));
+                          recentHeading.addView(seeAll);
+                          recentPanel.addView(recentHeading);
+                          gap(recentPanel,8);
+                          int shown = 0;
+                          for (int si=0; si<songs.length() && shown<5; si++) {
+                              JSONObject song = songs.optJSONObject(si);
+                              if (song == null) continue;
+                              LinearLayout tx = new LinearLayout(this);
+                              tx.setGravity(Gravity.CENTER_VERTICAL);
+                              tx.setPadding(0,dp(10),0,dp(10));
+                              TextView musicIcon = label("♫",23,orange,true);
+                              musicIcon.setGravity(Gravity.CENTER);
+                              musicIcon.setBackground(rounded(Color.rgb(255,230,207),12,Color.TRANSPARENT));
+                              tx.addView(musicIcon,new LinearLayout.LayoutParams(dp(48),dp(48)));
+                              LinearLayout txInfo = column();
+                              txInfo.setPadding(dp(10),0,dp(6),0);
+                              txInfo.addView(label(song.optString("title","Untitled song"),14,white,true));
+                              gap(txInfo,3);
+                              txInfo.addView(label(String.format(Locale.US,"%,d plays",song.optLong("plays",0)),12,muted,false));
+                              tx.addView(txInfo,new LinearLayout.LayoutParams(0,-2,1));
+                              tx.addView(label("—",15,orange,true));
+                              recentPanel.addView(tx);
+                              if (shown<4 && si<songs.length()-1) {
+                                  View divider = new View(this); divider.setBackgroundColor(border);
+                                  recentPanel.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+                              }
+                              shown++;
+                          }
+                          if (shown==0) {
+                              gap(recentPanel,8);
+                              recentPanel.addView(label("No recent song activity is available yet.",13,muted,false));
+                          }
+                          LinearLayout.LayoutParams recentParams = new LinearLayout.LayoutParams(-1,-2);
+                          recentParams.bottomMargin = dp(14);
+                          content.addView(recentPanel,recentParams);
+                          card("Song submissions",songSummary);
                           card("Earnings & withdrawals",earnings);
-                          card("My songs",songList);
                           if(songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
                               card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
                           }
-                          action("Withdraw",this::artistSettings);
+                          action("▣  Withdraw",this::artistSettings);
                           action("Upload a song in the app",this::songUploadScreen);
-                          action("Settings",this::artistSettings);
+                          action("⚙  Settings",this::artistSettings);
                           action("Refresh Artist Dashboard",this::artistDashboard);
                           action("Back to Profile",() -> screen("Profile"));
                       });
