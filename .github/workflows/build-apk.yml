@@ -9,29 +9,24 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Make Logo
+      - name: Make Logo Simple
         run: |
           python3 -m pip install Pillow -q
           python3 << 'PY'
           from PIL import Image, ImageDraw, ImageFont
           W=1024
-          img=Image.new('RGB',(W,W),'#FF7A00')
+          img=Image.new('RGB',(W,W),(255,122,0))
           draw=ImageDraw.Draw(img)
-          # simple gradient
-          for y in range(W):
-              g=int(122+y*0.08)
-              r=255
-              draw.line([(0,y),(W,y)],fill=(r,g,0))
           try:
-              fN=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",500)
-              fT=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",70)
+              fontN=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",600)
+              fontT=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",80)
           except:
-              fN=ImageFont.load_default()
-              fT=ImageFont.load_default()
-          draw.text((W//2,W//2-30),"N",fill="white",font=fN,anchor="mm")
-          draw.text((W//2,W//2+260),"NileSoniQ",fill="white",font=fT,anchor="mm")
+              fontN=ImageFont.load_default()
+              fontT=ImageFont.load_default()
+          draw.text((512,430),"N",fill="white",font=fontN,anchor="mm")
+          draw.text((512,780),"NileSoniQ",fill="white",font=fontT,anchor="mm")
           img.save("icon.png")
-          print("icon created")
+          print("icon ok")
           PY
       - name: Build APK
         run: |
@@ -78,7 +73,7 @@ jobs:
           android {
             namespace 'com.nilesoniq.app'
             compileSdk 34
-            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 13; versionName "3.3-auto-simple" }
+            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 14; versionName "3.4-simple" }
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
           dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
