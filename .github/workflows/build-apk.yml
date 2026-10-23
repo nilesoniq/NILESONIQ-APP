@@ -1,29 +1,31 @@
 name: NileSoniQ FINAL GREEN
 
-on:
+'on':
 push:
+branches:
+- main
 workflow_dispatch:
+
+permissions:
+contents: read
 
 jobs:
 build:
+name: Build NileSoniQ Android APK
 runs-on: ubuntu-latest
+timeout-minutes: 30
 
 steps:
   - name: Checkout repository
     uses: actions/checkout@v4
 
-  - name: Set up Java 17
+  - name: Set up Java
     uses: actions/setup-java@v4
     with:
       distribution: temurin
       java-version: '17'
 
-  - name: Set up Gradle
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.5'
-
-  - name: Install Android SDK
+  - name: Set up Android SDK
     uses: android-actions/setup-android@v3
 
   - name: Install Android SDK packages
@@ -33,9 +35,15 @@ steps:
         "platforms;android-34" \
         "build-tools;34.0.0"
 
-  - name: Configure Android project
+  - name: Install Gradle
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.5'
+
+  - name: Generate Android project
+    shell: bash
     run: |
-      set -e
+      set -euo pipefail
 
       mkdir -p app/src/main/java/com/nilesoniq/app
       mkdir -p app/src/main/res/layout
@@ -89,7 +97,7 @@ steps:
 
           defaultConfig {
               applicationId 'com.nilesoniq.app'
-              minSdk 21
+              minSdk 23
               targetSdk 34
               versionCode 37
               versionName '1.0'
@@ -113,6 +121,16 @@ steps:
       </resources>
       EOF
 
+      cat > app/src/main/res/values/styles.xml <<'EOF'
+      <resources>
+          <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+              <item name="colorPrimary">#FF7A00</item>
+              <item name="colorPrimaryDark">#D96500</item>
+              <item name="colorAccent">#FF7A00</item>
+          </style>
+      </resources>
+      EOF
+
       cat > app/src/main/AndroidManifest.xml <<'EOF'
       <manifest xmlns:android="http://schemas.android.com/apk/res/android">
           <uses-permission android:name="android.permission.INTERNET" />
@@ -132,20 +150,15 @@ steps:
                   </intent-filter>
               </activity>
 
-              <activity android:name=".ArtistEarningsActivity" />
-              <activity android:name=".UploadActivity" />
+              <activity
+                  android:name=".ArtistEarningsActivity"
+                  android:exported="false" />
+
+              <activity
+                  android:name=".UploadActivity"
+                  android:exported="false" />
           </application>
       </manifest>
-      EOF
-
-      cat > app/src/main/res/values/styles.xml <<'EOF'
-      <resources>
-          <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-              <item name="colorPrimary">#FF7A00</item>
-              <item name="colorPrimaryDark">#D96500</item>
-              <item name="colorAccent">#FF7A00</item>
-          </style>
-      </resources>
       EOF
 
       cat > app/src/main/res/layout/activity_main.xml <<'EOF'
@@ -211,7 +224,7 @@ steps:
               android:layout_width="match_parent"
               android:layout_height="wrap_content"
               android:layout_marginTop="16dp"
-              android:text="Connect your account to view your actual earnings and balance." />
+              android:text="Sign in to view your account earnings and balance." />
 
           <Button
               android:id="@+id/btnWithdraw"
@@ -239,6 +252,7 @@ steps:
           <EditText
               android:id="@+id/songTitle"
               android:hint="Song title"
+              android:inputType="textCapSentences"
               android:layout_width="match_parent"
               android:layout_height="wrap_content" />
 
@@ -276,8 +290,8 @@ steps:
               rv.setLayoutManager(new LinearLayoutManager(this));
 
               String[] songs = {
-                  "NileSoniQ — Explore Songs",
-                  "Sign in to discover music"
+                  "NileSoniQ — Discover Music",
+                  "Connect to discover the latest songs"
               };
 
               rv.setAdapter(new RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -359,22 +373,38 @@ steps:
           "mipmap-xxxhdpi": 192,
       }
 
-      try:
-          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-          ImageFont.truetype(font_path, 20)
-      except OSError:
-          font_path = None
+      font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
       for folder, size in sizes.items():
           image = Image.new("RGB", (size, size), "#FF7A00")
           draw = ImageDraw.Draw(image)
-          font = ImageFont.truetype(font_path, int(size * 0.65)) if font_path else ImageFont.load_default()
-          draw.text((size / 2, size / 2), "N", fill="white", font=font, anchor="mm")
+
+          try:
+              font = ImageFont.truetype(font_path, int(size * 0.65))
+          except OSError:
+              font = ImageFont.load_default()
+
+          draw.text(
+              (size / 2, size / 2),
+              "N",
+              fill="white",
+              font=font,
+              anchor="mm"
+          )
+
           output = Path("app/src/main/res") / folder / "ic_launcher.png"
           image.save(output)
 
       print("Launcher icons generated.")
+
       PY
+
+  - name: Validate Android project
+    run: |
+      test -f app/src/main/AndroidManifest.xml
+      test -f app/src/main/java/com/nilesoniq/app/MainActivity.java
+      test -f app/src/main/res/layout/activity_main.xml
+      test -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
   - name: Build debug APK
     run: gradle --no-daemon assembleDebug
