@@ -450,7 +450,12 @@ jobs:
                       ("Trending".equals(homeCategory) ? "Trending" : "New Releases");
                   content.addView(label(sectionTitle,20,white,true));
                   gap(content,5);
-                  content.addView(label("Latest Ugandan music • Updated from approved songs",13,muted,false));
+                  String categoryNote = "Trending".equals(homeCategory)
+                      ? "Recent releases prioritized • based on available song dates and recorded plays"
+                      : ("Top Charts".equals(homeCategory)
+                          ? "Ranked by recorded plays among the latest approved songs loaded"
+                          : "Latest Ugandan music • Updated from approved songs");
+                  content.addView(label(categoryNote,13,muted,false));
                   gap(content,14);
                   songResults = column();
                   content.addView(songResults);
@@ -852,10 +857,22 @@ jobs:
                   card("Song submissions","Loading song statuses and play counts…");
                   card("Earnings & withdrawals","Loading existing wallet and payout records…");
                   new Thread(() -> {
-                      String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
+                      // The signed-in account ID and the artist profile ID are not necessarily
+                      // the same. Resolve the artist row first, then use its ID for artist_id filters.
+                      String artistRaw = getApiText("/api/db/artists?select=id,user_id,name&eq.user_id="+urlEncode(userId)+"&limit=1");
+                      JSONArray artistRows = dataArray(artistRaw);
+                      String artistId = userId;
+                      if (artistRows.length() > 0) {
+                          JSONObject artistRow = artistRows.optJSONObject(0);
+                          if (artistRow != null && !artistRow.optString("id", "").trim().isEmpty()) {
+                              artistId = artistRow.optString("id").trim();
+                          }
+                      }
+                      final String resolvedArtistId = artistId;
+                      String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(resolvedArtistId)+"&order=created_at.desc&limit=100");
                       String walletRaw = getApiText("/api/db/artist_wallets?select=balance&eq.user_id="+urlEncode(userId)+"&limit=10");
                       String payoutsRaw = getApiText("/api/db/artist_payouts?select=id,amount,status,created_at&eq.user_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
-                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
+                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&eq.artist_id="+urlEncode(resolvedArtistId)+"&order=created_at.desc&limit=100");
                       JSONArray songs = dataArray(songsRaw);
                       JSONArray wallets = dataArray(walletRaw);
                       JSONArray payouts = dataArray(payoutsRaw);
@@ -1069,7 +1086,7 @@ jobs:
                           content.addView(recentPanel,recentParams);
                           card("Song submissions",songSummary);
                           card("Earnings & withdrawals",earnings);
-                          if(songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
+                          if(artistRaw.startsWith("ERROR") || songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
                               card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
                           }
                           action("▣  Withdraw",this::artistSettings);
@@ -1384,7 +1401,7 @@ jobs:
                       String error = null;
                       HttpURLConnection c = null;
                       try {
-                          URL u = new URL(API + "/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url&eq.approved=1&order=created_at.desc&limit=50");
+                          URL u = new URL(API + "/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url,created_at&eq.approved=1&order=created_at.desc&limit=200");
                           c = (HttpURLConnection)u.openConnection();
                           c.setConnectTimeout(12000);
                           c.setReadTimeout(12000);
@@ -1475,6 +1492,21 @@ jobs:
                   }).start();
               }
 
+              private long parseSongDate(String raw) {
+                  if (raw == null || raw.trim().isEmpty()) return 0L;
+                  String value = raw.trim();
+                  String[] patterns = {"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"};
+                  for (String pattern : patterns) {
+                      try {
+                          java.text.SimpleDateFormat format = new java.text.SimpleDateFormat(pattern, java.util.Locale.US);
+                          format.setLenient(false);
+                          format.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                          return format.parse(value).getTime();
+                      } catch (Exception ignored) {}
+                  }
+                  return 0L;
+              }
+
               private void renderSongs() {
                   if (songResults == null) return;
 
@@ -1533,8 +1565,27 @@ jobs:
                       if (item != null) displaySongs.add(item);
                   }
                   if ("Top Charts".equals(homeCategory) && "Home".equals(tab)) {
+                      // Top Charts ranks the larger fetched catalogue by recorded lifetime plays.
                       java.util.Collections.sort(displaySongs, (a,b) ->
                           Long.compare(b.optLong("plays",0), a.optLong("plays",0)));
+                  } else if ("Trending".equals(homeCategory) && "Home".equals(tab)) {
+                      // The current API does not expose a dated play-history endpoint. Until it does,
+                      // Trending prioritizes songs released in the last 30 days, then their recorded plays.
+                      final long now = System.currentTimeMillis();
+                      final long thirtyDays = 30L * 24L * 60L * 60L * 1000L;
+                      java.util.Collections.sort(displaySongs, (a,b) -> {
+                          long aDate = parseSongDate(a.optString("created_at", ""));
+                          long bDate = parseSongDate(b.optString("created_at", ""));
+                          boolean aRecent = aDate > 0 && now - aDate >= 0 && now - aDate <= thirtyDays;
+                          boolean bRecent = bDate > 0 && now - bDate >= 0 && now - bDate <= thirtyDays;
+                          if (aRecent != bRecent) return aRecent ? -1 : 1;
+                          if (aRecent && bRecent) {
+                              int playCompare = Long.compare(b.optLong("plays",0), a.optLong("plays",0));
+                              if (playCompare != 0) return playCompare;
+                              return Long.compare(bDate, aDate);
+                          }
+                          return Long.compare(b.optLong("plays",0), a.optLong("plays",0));
+                      });
                   }
 
                   for (int i = 0; i < displaySongs.size(); i++) {
