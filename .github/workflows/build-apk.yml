@@ -1817,6 +1817,8 @@ jobs:
                       Toast.makeText(this,"This song has no valid secure audio URL.",Toast.LENGTH_LONG).show();
                       return;
                   }
+                  // Capture the validated URL in an effectively-final variable for the background thread.
+                  final String playbackUrl = url;
                   releasePlayer();
                   final int id = ++token;
                   title = song.optString("title","Untitled song");
@@ -1868,7 +1870,7 @@ jobs:
                       });
                       new Thread(() -> {
                           try {
-                              mp.setDataSource(url);
+                              mp.setDataSource(playbackUrl);
                               mp.prepareAsync();
                           } catch (Exception e) {
                               runOnUiThread(() -> {
