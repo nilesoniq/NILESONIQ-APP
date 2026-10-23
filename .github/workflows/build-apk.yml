@@ -9,29 +9,11 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Make Logo Simple
-        run: |
-          python3 -m pip install Pillow -q
-          python3 << 'PY'
-          from PIL import Image, ImageDraw, ImageFont
-          W=1024
-          img=Image.new('RGB',(W,W),(255,122,0))
-          draw=ImageDraw.Draw(img)
-          try:
-              fontN=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",600)
-              fontT=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",80)
-          except:
-              fontN=ImageFont.load_default()
-              fontT=ImageFont.load_default()
-          draw.text((512,430),"N",fill="white",font=fontN,anchor="mm")
-          draw.text((512,780),"NileSoniQ",fill="white",font=fontT,anchor="mm")
-          img.save("icon.png")
-          print("icon ok")
-          PY
       - name: Build APK
         run: |
           mkdir -p app/src/main/java/com/nilesoniq/app
           mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi app/src/main/res/values
+          ls -lh
           cp icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           cp icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
@@ -73,7 +55,7 @@ jobs:
           android {
             namespace 'com.nilesoniq.app'
             compileSdk 34
-            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 14; versionName "3.4-simple" }
+            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 15; versionName "3.5-final" }
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
           dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
@@ -89,5 +71,5 @@ jobs:
           arguments: assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: NileSoniQ-Auto-Logo-APK
+          name: NileSoniQ-Final-APK
           path: app/build/outputs/apk/debug/app-debug.apk
