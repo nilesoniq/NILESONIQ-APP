@@ -55,6 +55,7 @@ jobs:
 
           mkdir -p app/src/main/java/com/nilesoniq/app
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -107,6 +108,15 @@ jobs:
           }
           EOF
 
+          cat > app/src/main/res/drawable/nilesoniq_logo.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#F47700" android:pathData="M0,0h108v108h-108z" />
+              <path android:fillColor="#FFFFFF" android:pathData="M25,80V28h12l34,34V28h12v52H71L37,46v34z" />
+          </vector>
+          EOF
+
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources>
               <string name="app_name">NileSoniQ</string>
@@ -133,6 +143,7 @@ jobs:
               <application
                   android:allowBackup="true"
                   android:label="@string/app_name"
+                  android:icon="@drawable/nilesoniq_logo"
                   android:usesCleartextTraffic="false"
                   android:theme="@style/AppTheme">
                   <activity
@@ -153,6 +164,8 @@ jobs:
           import android.app.Activity;
           import android.os.Bundle;
           import android.graphics.Color;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
           import android.graphics.Typeface;
           import android.graphics.drawable.GradientDrawable;
           import android.media.AudioAttributes;
@@ -166,6 +179,7 @@ jobs:
           import android.view.Gravity;
           import android.view.View;
           import android.widget.Button;
+          import android.widget.ImageView;
           import android.widget.EditText;
           import android.widget.HorizontalScrollView;
           import android.widget.LinearLayout;
@@ -202,6 +216,7 @@ jobs:
               private JSONArray cachedSongs = new JSONArray();
               private String selectedGenre = "All";
               private int songRequestId = 0;
+              private String homeCategory = "New Releases";
 
               private String tab = "Home";
               private MediaPlayer player;
@@ -279,9 +294,22 @@ jobs:
 
                   LinearLayout header = new LinearLayout(this);
                   header.setGravity(Gravity.CENTER_VERTICAL);
-                  TextView logo = label("NileSoniQ",26,orange,true);
-                  header.addView(logo,new LinearLayout.LayoutParams(0,-2,1));
-                  header.addView(label("MUSIC • COMMUNITY",10,muted,true));
+                  LinearLayout brand = column();
+                  brand.setGravity(Gravity.CENTER_VERTICAL);
+                  LinearLayout mark = new LinearLayout(this);
+                  mark.setGravity(Gravity.CENTER);
+                  mark.setBackground(rounded(orange,14,orange));
+                  TextView bigN = label("N",30,Color.WHITE,true);
+                  bigN.setGravity(Gravity.CENTER);
+                  mark.addView(bigN,new LinearLayout.LayoutParams(dp(48),dp(48)));
+                  brand.addView(mark);
+                  TextView wordmark = label("NileSoniQ",16,orange,true);
+                  wordmark.setGravity(Gravity.CENTER);
+                  brand.addView(wordmark);
+                  header.addView(brand,new LinearLayout.LayoutParams(-2,-2,1));
+                  TextView tagline = label("MUSIC • COMMUNITY",10,muted,true);
+                  tagline.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+                  header.addView(tagline);
                   root.addView(header);
                   gap(root,18);
 
@@ -409,16 +437,18 @@ jobs:
                   categories.setGravity(Gravity.CENTER_VERTICAL);
                   String[] categoryNames = {"New Releases", "Top Charts", "Trending"};
                   for (String category : categoryNames) {
-                      TextView chip = label(category,12,category.equals("New Releases")?Color.WHITE:muted,true);
+                      boolean selected = category.equals(homeCategory);
+                      TextView chip = label(category,12,selected?Color.WHITE:muted,true);
                       chip.setGravity(Gravity.CENTER);
                       chip.setPadding(dp(12),dp(10),dp(12),dp(10));
-                      chip.setBackground(rounded(category.equals("New Releases")?orange:Color.WHITE,22,
-                          category.equals("New Releases")?orange:border));
+                      chip.setBackground(rounded(selected?orange:Color.WHITE,22,
+                          selected?orange:border));
                       LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2,-2);
                       cp.rightMargin = dp(7);
                       categories.addView(chip,cp);
                       chip.setOnClickListener(v -> {
-                          Toast.makeText(this,category+" uses the approved songs currently available.",Toast.LENGTH_SHORT).show();
+                          homeCategory = category;
+                          home();
                       });
                   }
                   LinearLayout.LayoutParams categoryParams = new LinearLayout.LayoutParams(-1,-2);
@@ -427,7 +457,9 @@ jobs:
 
                   LinearLayout section = new LinearLayout(this);
                   section.setGravity(Gravity.CENTER_VERTICAL);
-                  section.addView(label("Latest approved songs",18,white,true),
+                  String sectionTitle = "Top Charts".equals(homeCategory) ? "Top chart songs" :
+                      ("Trending".equals(homeCategory) ? "Trending songs" : "Latest approved songs");
+                  section.addView(label(sectionTitle,18,white,true),
                       new LinearLayout.LayoutParams(0,-2,1));
                   TextView seeAll = label("See all  →",13,orange,true);
                   seeAll.setOnClickListener(v -> screen("Discover"));
@@ -635,6 +667,69 @@ jobs:
                   }).start();
               }
 
+              private String profileImageUrl() {
+                  if (signedInUser == null) return "";
+                  String[] keys = {"avatar_url","profile_picture_url","profile_image_url","photo_url","avatar","picture","image_url"};
+                  for (String key : keys) {
+                      String value = signedInUser.optString(key, "").trim();
+                      if (value.startsWith("https://") || value.startsWith("http://")) return value;
+                  }
+                  return "";
+              }
+
+              private void addArtistProfile(String artistName, String email) {
+                  LinearLayout box = new LinearLayout(this);
+                  box.setGravity(Gravity.CENTER_VERTICAL);
+                  box.setBackground(rounded(Color.WHITE,18,border));
+                  box.setPadding(dp(15),dp(15),dp(15),dp(15));
+                  ImageView avatar = new ImageView(this);
+                  avatar.setImageDrawable(null);
+                  avatar.setBackground(rounded(Color.rgb(255,224,194),40,Color.TRANSPARENT));
+                  avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                  TextView initial = label(artistName.isEmpty()?"N":artistName.substring(0,1).toUpperCase(Locale.ROOT),25,orange,true);
+                  initial.setGravity(Gravity.CENTER);
+                  LinearLayout avatarWrap = new LinearLayout(this);
+                  avatarWrap.setGravity(Gravity.CENTER);
+                  avatarWrap.setBackground(rounded(Color.rgb(255,224,194),40,Color.TRANSPARENT));
+                  avatarWrap.addView(initial,new LinearLayout.LayoutParams(dp(64),dp(64)));
+                  box.addView(avatarWrap,new LinearLayout.LayoutParams(dp(64),dp(64)));
+                  LinearLayout details = column();
+                  details.setPadding(dp(12),0,0,0);
+                  details.addView(label("Artist profile",12,muted,true));
+                  gap(details,4);
+                  details.addView(label(artistName,17,white,true));
+                  gap(details,3);
+                  details.addView(label(email,12,muted,false));
+                  box.addView(details,new LinearLayout.LayoutParams(0,-2,1));
+                  LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1,-2);
+                  params.bottomMargin = dp(12);
+                  content.addView(box,params);
+                  String imageUrl = profileImageUrl();
+                  if (!imageUrl.isEmpty()) {
+                      new Thread(() -> {
+                          HttpURLConnection conn = null;
+                          try {
+                              conn = (HttpURLConnection)new URL(imageUrl).openConnection();
+                              conn.setConnectTimeout(7000);
+                              conn.setReadTimeout(7000);
+                              conn.setInstanceFollowRedirects(true);
+                              Bitmap bitmap = BitmapFactory.decodeStream(conn.getInputStream());
+                              if (bitmap != null) runOnUiThread(() -> {
+                                  if (avatarWrap.getParent() != null) {
+                                      avatarWrap.removeAllViews();
+                                      ImageView image = new ImageView(this);
+                                      image.setImageBitmap(bitmap);
+                                      image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                                      image.setBackground(rounded(Color.WHITE,40,Color.TRANSPARENT));
+                                      avatarWrap.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));
+                                  }
+                              });
+                          } catch (Exception ignored) {
+                          } finally { if (conn != null) conn.disconnect(); }
+                      }).start();
+                  }
+              }
+
               private void artistDashboard() {
                   if (signedInUser == null) {
                       Toast.makeText(this,"Please sign in first.",Toast.LENGTH_SHORT).show();
@@ -648,7 +743,7 @@ jobs:
                   final String artistName = signedInUser.optString("artist_name", signedInUser.optString("name",""));
                   content.removeAllViews();
                   heading("Artist Dashboard","Your songs, performance and earnings");
-                  card("Artist profile", (artistName.isEmpty()?email:artistName+"\n"+email));
+                  addArtistProfile(artistName.isEmpty()?email:artistName, email);
                   card("Song submissions","Loading song statuses and play counts…");
                   card("Earnings & withdrawals","Loading existing wallet and payout records…");
                   new Thread(() -> {
@@ -700,7 +795,7 @@ jobs:
                           if(isFinishing() || signedInUser==null || !tab.equals("Profile")) return;
                           content.removeAllViews();
                           heading("Artist Dashboard","Your songs, performance and earnings");
-                          card("Artist profile",(artistName.isEmpty()?email:artistName+"\n"+email));
+                          addArtistProfile(artistName.isEmpty()?email:artistName, email);
                           card("Performance & song status",songSummary);
                           card("Earnings & withdrawals",earnings);
                           card("My songs",songList);
@@ -1160,9 +1255,18 @@ jobs:
                       songSearchInput.getText().toString().trim().toLowerCase(Locale.ROOT);
 
                   int shown = 0;
+                  java.util.ArrayList<JSONObject> displaySongs = new java.util.ArrayList<>();
+                  for (int i=0;i<cachedSongs.length();i++) {
+                      JSONObject item = cachedSongs.optJSONObject(i);
+                      if (item != null) displaySongs.add(item);
+                  }
+                  if ("Top Charts".equals(homeCategory) && "Home".equals(tab)) {
+                      java.util.Collections.sort(displaySongs, (a,b) ->
+                          Long.compare(b.optLong("plays",0), a.optLong("plays",0)));
+                  }
 
-                  for (int i = 0; i < cachedSongs.length(); i++) {
-                      JSONObject song = cachedSongs.optJSONObject(i);
+                  for (int i = 0; i < displaySongs.size(); i++) {
+                      JSONObject song = displaySongs.get(i);
                       if (song == null) continue;
 
                       String name = song.optString("title","Untitled song");
