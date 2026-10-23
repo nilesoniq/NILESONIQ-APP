@@ -11,6 +11,7 @@ jobs:
           java-version: '17'
       - name: Build APK
         run: |
+          ls -l
           mkdir -p app/src/main/java/com/nilesoniq/app
           mkdir -p app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi app/src/main/res/values
           cp icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
@@ -21,7 +22,6 @@ jobs:
           cat > app/src/main/java/com/nilesoniq/app/MainActivity.java << 'JAVA'
           package com.nilesoniq.app;
           import android.os.Bundle;
-          import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import androidx.appcompat.app.AppCompatActivity;
@@ -54,7 +54,7 @@ jobs:
           android {
             namespace 'com.nilesoniq.app'
             compileSdk 34
-            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 16; versionName "3.6-phone-logo" }
+            defaultConfig { applicationId "com.nilesoniq.app"; minSdk 21; targetSdk 34; versionCode 22; versionName "4.0-phone" }
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
           dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
@@ -70,5 +70,5 @@ jobs:
           arguments: assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: NileSoniQ-Phone-Logo-APK
+          name: NileSoniQ-Phone-APK
           path: app/build/outputs/apk/debug/app-debug.apk
