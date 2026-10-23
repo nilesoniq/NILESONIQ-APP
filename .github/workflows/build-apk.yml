@@ -718,10 +718,15 @@ jobs:
                           // New uploads must remain private until an authorized admin approves them.
                           row.put("approved",false);
                           row.put("review_status","pending");
-                          row.put("status","pending");
                           ApiResult result = request("POST","/api/db/songs",row);
-                          if (result.code < 200 || result.code >= 300 || result.body == null || result.body.optJSONArray("data") == null) {
-                              String error = result.body == null ? "Song details could not be saved." : result.body.optString("error","Song details could not be saved.");
+                          // Cloudflare Worker returns data as a single JSON object for one inserted song,
+                          // not necessarily an array. Accept either response shape.
+                          Object savedData = result.body == null ? null : result.body.opt("data");
+                          boolean hasSavedData = savedData != null && savedData != JSONObject.NULL;
+                          if (result.code < 200 || result.code >= 300 || !hasSavedData) {
+                              String error = result.body == null
+                                  ? (result.code == -1 ? "Could not connect to the NileSoniQ Cloudflare API. Check your internet and try again." : "Cloudflare did not return a valid response (HTTP " + result.code + ").")
+                                  : result.body.optString("error","Song details could not be saved by the Cloudflare database.");
                               throw new Exception(error);
                           }
                           runOnUiThread(() -> {
