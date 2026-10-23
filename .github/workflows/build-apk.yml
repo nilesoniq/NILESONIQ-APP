@@ -234,10 +234,11 @@ jobs:
               private String authMode = "login";
               private EditText nameInput, phoneInput, emailInput, passwordInput;
               private EditText uploadTitleInput, uploadArtistInput, uploadGenreInput, uploadDescriptionInput;
-              private Uri selectedAudioUri, selectedCoverUri;
+              private Uri selectedAudioUri, selectedCoverUri, selectedAvatarUri;
               private boolean uploadBusy = false;
               private static final int PICK_AUDIO = 6101;
               private static final int PICK_COVER = 6102;
+              private static final int PICK_AVATAR = 6103;
 
               @Override
               public void onCreate(Bundle state) {
@@ -438,7 +439,7 @@ jobs:
                       categories.addView(tabCell,new LinearLayout.LayoutParams(0,-2,1));
                       tabCell.setOnClickListener(v -> {
                           homeCategory = category;
-                          home();
+                          screen("Home");
                       });
                   }
                   LinearLayout.LayoutParams catP = new LinearLayout.LayoutParams(-1,-2);
@@ -501,7 +502,7 @@ jobs:
               private void playerScreen() {
                   heading("Music player","Listen to songs from NileSoniQ.");
                   if (audioUrl.isEmpty()) {
-                      card("Nothing playing yet","Open Discover and tap a song to start playback.");
+                      card("Ready to play","The player opens directly here. Choose any song from Home or Discover and playback will start in this player.");
                   } else {
                       card(title,artist + (preparing ? "\nPreparing audio…" :
                           playing ? "\nPlaying now" : "\nPaused"));
@@ -509,7 +510,6 @@ jobs:
                           this::toggle);
                       action("Stop playback",this::stopPlayback);
                   }
-                  action("Browse songs",() -> screen("Discover"));
               }
 
               private void community() {
@@ -831,60 +831,111 @@ jobs:
               private void editArtistProfile() {
                   if (signedInUser == null) { screen("Profile"); return; }
                   content.removeAllViews();
-                  heading("Edit Artist Profile", "Update the details shown on your artist page");
+                  heading("Edit Artist Profile", "Update the details shown on your NileSoniQ artist page");
                   final EditText nameInput = editField("Artist name");
                   final EditText bioInput = editField("Artist bio");
                   final EditText locationInput = editField("Location");
-                  final EditText photoInput = editField("Profile photo URL (https://...)");
                   String currentName = signedInUser.optString("artist_name", signedInUser.optString("name", ""));
                   String currentBio = signedInUser.optString("bio", "");
                   String currentLocation = signedInUser.optString("location", "Uganda");
-                  String currentPhoto = profileImageUrl();
                   nameInput.setText(currentName);
                   bioInput.setText(currentBio);
                   locationInput.setText(currentLocation);
-                  photoInput.setText(currentPhoto);
                   content.addView(nameInput); gap(content,10);
                   content.addView(bioInput); gap(content,10);
-                  content.addView(locationInput); gap(content,10);
-                  content.addView(photoInput); gap(content,12);
-                  card("Profile photo", "Paste a direct HTTPS image URL. The photo URL is saved to your artist profile and loaded on the dashboard.");
+                  content.addView(locationInput); gap(content,12);
+
+                  LinearLayout photoBox = column();
+                  photoBox.setBackground(rounded(Color.WHITE,16,border));
+                  photoBox.setPadding(dp(14),dp(14),dp(14),dp(14));
+                  photoBox.addView(label("Artist profile picture",16,white,true));
+                  gap(photoBox,8);
+                  ImageView photoPreview = new ImageView(this);
+                  photoPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                  photoPreview.setBackground(rounded(Color.rgb(255,224,194),40,Color.TRANSPARENT));
+                  LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(dp(100),dp(100));
+                  previewParams.gravity = Gravity.CENTER_HORIZONTAL;
+                  photoBox.addView(photoPreview,previewParams);
+                  gap(photoBox,8);
+                  String currentPhoto = profileImageUrl();
+                  if (selectedAvatarUri != null) {
+                      try (java.io.InputStream in = getContentResolver().openInputStream(selectedAvatarUri)) {
+                          Bitmap bitmap = BitmapFactory.decodeStream(in);
+                          if (bitmap != null) photoPreview.setImageBitmap(bitmap);
+                      } catch (Exception ignored) {}
+                  } else if (!currentPhoto.isEmpty()) {
+                      new Thread(() -> {
+                          HttpURLConnection conn = null;
+                          try {
+                              conn = (HttpURLConnection)new URL(currentPhoto).openConnection();
+                              conn.setConnectTimeout(7000); conn.setReadTimeout(7000);
+                              Bitmap bitmap = BitmapFactory.decodeStream(conn.getInputStream());
+                              if (bitmap != null) runOnUiThread(() -> photoPreview.setImageBitmap(bitmap));
+                          } catch (Exception ignored) {} finally { if (conn != null) conn.disconnect(); }
+                      }).start();
+                  }
+                  TextView selectedPhotoLabel = label(selectedAvatarUri == null ? "Current picture" : getDisplayName(selectedAvatarUri),12,muted,false);
+                  selectedPhotoLabel.setGravity(Gravity.CENTER);
+                  photoBox.addView(selectedPhotoLabel);
+                  LinearLayout.LayoutParams photoParams = new LinearLayout.LayoutParams(-1,-2);
+                  photoParams.bottomMargin = dp(12);
+                  content.addView(photoBox,photoParams);
+                  action("Choose Picture from Phone", () -> {
+                      try {
+                          Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                          pick.addCategory(Intent.CATEGORY_OPENABLE);
+                          pick.setType("image/*");
+                          pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                          startActivityForResult(pick,PICK_AVATAR);
+                      } catch (Exception e) {
+                          Toast.makeText(this,"Could not open the phone gallery.",Toast.LENGTH_LONG).show();
+                      }
+                  });
+                  card("Website sync", "Your profile details and picture are saved to the same NileSoniQ account used by the website.");
                   action("Save Profile", () -> {
                       String name = nameInput.getText().toString().trim();
                       String bio = bioInput.getText().toString().trim();
                       String location = locationInput.getText().toString().trim();
-                      String photo = photoInput.getText().toString().trim();
                       if (name.isEmpty()) { Toast.makeText(this,"Artist name is required.",Toast.LENGTH_LONG).show(); return; }
-                      if (!photo.isEmpty() && !photo.startsWith("https://")) { Toast.makeText(this,"Profile photo URL must start with https://",Toast.LENGTH_LONG).show(); return; }
                       final String userId = signedInUser.optString("id", signedInUser.optString("user_id", ""));
+                      if (userId.isEmpty()) { Toast.makeText(this,"Please sign in again before saving.",Toast.LENGTH_LONG).show(); return; }
+                      Toast.makeText(this,"Saving your profile…",Toast.LENGTH_SHORT).show();
                       new Thread(() -> {
                           try {
+                              String photo = currentPhoto;
+                              if (selectedAvatarUri != null) photo = uploadObject(selectedAvatarUri,"avatars",userId,"artist_avatar");
+                              final String savedPhoto = photo;
                               JSONObject payload = new JSONObject();
                               payload.put("user_id", userId);
                               payload.put("name", name);
                               payload.put("bio", bio);
                               payload.put("location", location.isEmpty() ? "Uganda" : location);
-                              payload.put("avatar_url", photo);
+                              payload.put("avatar_url", savedPhoto);
                               ApiResult result = request("POST", "/api/db/artists", payload);
-                              if (result.code < 200 || result.code >= 300 || result.body == null || result.body.has("error") && !result.body.isNull("error")) {
+                              if (result.code < 200 || result.code >= 300 || result.body == null || (result.body.has("error") && !result.body.isNull("error"))) {
                                   String message = result.body == null ? "Could not save artist profile (HTTP " + result.code + ")." : result.body.optString("error", "Profile save failed.");
-                                  runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+                                  runOnUiThread(() -> Toast.makeText(this,message,Toast.LENGTH_LONG).show());
                                   return;
                               }
-                              JSONObject artist = result.body.optJSONObject("data");
                               runOnUiThread(() -> {
                                   try {
                                       signedInUser.put("artist_name", name);
                                       signedInUser.put("name", name);
                                       signedInUser.put("bio", bio);
                                       signedInUser.put("location", location.isEmpty() ? "Uganda" : location);
-                                      signedInUser.put("avatar_url", photo);
+                                      signedInUser.put("avatar_url", savedPhoto);
+                                      JSONObject artistRow = result.body.optJSONObject("data");
+                                      if (artistRow != null) {
+                                          signedInUser.put("artist_id", artistRow.optString("id", ""));
+                                      }
                                   } catch (Exception ignored) {}
-                                  Toast.makeText(this,"Artist profile saved.",Toast.LENGTH_LONG).show();
+                                  selectedAvatarUri = null;
+                                  Toast.makeText(this,"Artist profile and picture saved.",Toast.LENGTH_LONG).show();
                                   artistDashboard();
                               });
                           } catch (Exception e) {
-                              runOnUiThread(() -> Toast.makeText(this,"Profile save failed. Please try again.",Toast.LENGTH_LONG).show());
+                              String message = e.getMessage() == null ? "Profile save failed. Please try again." : e.getMessage();
+                              runOnUiThread(() -> Toast.makeText(this,message,Toast.LENGTH_LONG).show());
                           }
                       }).start();
                   });
@@ -997,7 +1048,8 @@ jobs:
                           }
                           content.removeAllViews();
                           heading("Artist Dashboard","Your songs, performance and earnings");
-                          addArtistProfile(artistName.isEmpty()?email:artistName, email);
+                          String shownArtistName = resolvedArtist == null ? artistName : resolvedArtist.optString("name", artistName);
+                          addArtistProfile(shownArtistName.isEmpty()?email:shownArtistName, email);
                           LinearLayout topActions = new LinearLayout(this);
                           topActions.setOrientation(LinearLayout.HORIZONTAL);
                           View spacer = new View(this);
@@ -1214,6 +1266,11 @@ jobs:
                   Uri uri = data.getData();
                   try { getContentResolver().takePersistableUriPermission(uri, data.getFlags() & (android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)); }
                   catch (Exception ignored) {}
+                  if (requestCode == PICK_AVATAR) {
+                      selectedAvatarUri = uri;
+                      editArtistProfile();
+                      return;
+                  }
                   if (requestCode == PICK_AUDIO) selectedAudioUri = uri;
                   else if (requestCode == PICK_COVER) selectedCoverUri = uri;
                   if (tab.equals("Profile")) songUploadScreen();
@@ -1642,14 +1699,6 @@ jobs:
                       // Top Charts ranks the fetched approved catalogue by recorded lifetime plays.
                       java.util.Collections.sort(displaySongs, (a,b) -> Long.compare(b.optLong("plays",0), a.optLong("plays",0)));
                   } else if ("Trending".equals(homeCategory) && "Home".equals(tab)) {
-                      // Trending uses the newest dated songs first, with recorded plays as the tie-breaker.
-                      java.util.Collections.sort(displaySongs, (a,b) -> {
-                          String ad = a.optString("created_at", "");
-                          String bd = b.optString("created_at", "");
-                          int dateCompare = bd.compareTo(ad);
-                          return dateCompare != 0 ? dateCompare : Long.compare(b.optLong("plays",0), a.optLong("plays",0));
-                      });
-                  } else if ("Trending".equals(homeCategory) && "Home".equals(tab)) {
                       // The current API does not expose a dated play-history endpoint. Until it does,
                       // Trending prioritizes songs released in the last 30 days, then their recorded plays.
                       final long now = System.currentTimeMillis();
@@ -1758,13 +1807,18 @@ jobs:
               }
 
               private void playSong(JSONObject song) {
+                  if (song == null) {
+                      Toast.makeText(this,"This song is not available.",Toast.LENGTH_LONG).show();
+                      return;
+                  }
                   String url = song.optString("audio_url","").trim();
+                  if (url.isEmpty()) url = song.optString("file_url","").trim();
                   if (!url.startsWith("https://")) {
                       Toast.makeText(this,"This song has no valid secure audio URL.",Toast.LENGTH_LONG).show();
                       return;
                   }
                   releasePlayer();
-                  int id = ++token;
+                  final int id = ++token;
                   title = song.optString("title","Untitled song");
                   artist = song.optString("artist","Unknown artist");
                   audioUrl = url;
@@ -1772,57 +1826,68 @@ jobs:
                   playing = false;
                   screen("Player");
 
-                  new Thread(() -> {
+                  try {
+                      // Construct MediaPlayer on the UI thread so Android always has a callback Looper.
                       MediaPlayer mp = new MediaPlayer();
-                      try {
-                          mp.setAudioAttributes(new AudioAttributes.Builder()
-                              .setUsage(AudioAttributes.USAGE_MEDIA)
-                              .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-                          mp.setDataSource(url);
-                          mp.setOnPreparedListener(p -> runOnUiThread(() -> {
-                              if (id != token || isFinishing()) {
-                                  p.release();
-                                  return;
-                              }
-                              player = p;
+                      player = mp;
+                      mp.setAudioAttributes(new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_MEDIA)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
+                      mp.setOnPreparedListener(p -> {
+                          if (id != token || isFinishing()) {
+                              try { p.release(); } catch (Exception ignored) {}
+                              return;
+                          }
+                          preparing = false;
+                          try {
+                              p.start();
+                              playing = true;
+                              screen("Player");
+                          } catch (Exception e) {
+                              audioUrl = "";
+                              releasePlayer();
+                              Toast.makeText(this,"Unable to start playback. Please try again.",Toast.LENGTH_LONG).show();
+                              if (!isFinishing()) screen("Player");
+                          }
+                      });
+                      mp.setOnCompletionListener(p -> {
+                          if (id == token) {
+                              playing = false;
                               preparing = false;
-                              try {
-                                  p.start();
-                                  playing = true;
-                                  screen("Player");
-                              } catch (Exception e) {
-                                  Toast.makeText(this,"Unable to start playback.",Toast.LENGTH_LONG).show();
-                              }
-                          }));
-                          mp.setOnCompletionListener(p -> runOnUiThread(() -> {
-                              if (id == token) {
-                                  playing = false;
-                                  if (!isFinishing()) screen("Player");
-                              }
-                          }));
-                          mp.setOnErrorListener((p, what, extra) -> {
+                              if (!isFinishing()) screen("Player");
+                          }
+                      });
+                      mp.setOnErrorListener((p, what, extra) -> {
+                          if (id == token) {
+                              audioUrl = "";
+                              releasePlayer();
+                              Toast.makeText(this,"This audio could not be played. Try another song.",Toast.LENGTH_LONG).show();
+                              if (!isFinishing()) screen("Player");
+                          }
+                          return true;
+                      });
+                      new Thread(() -> {
+                          try {
+                              mp.setDataSource(url);
+                              mp.prepareAsync();
+                          } catch (Exception e) {
                               runOnUiThread(() -> {
-                                  if (id != token) return;
-                                  audioUrl = "";
-                                  releasePlayer();
-                                  Toast.makeText(this,"This audio could not be played.",Toast.LENGTH_LONG).show();
-                                  if (!isFinishing()) screen("Player");
-                              });
-                              return true;
-                          });
-                          mp.prepareAsync();
-                      } catch (Exception e) {
-                          try { mp.release(); } catch (Exception ignored) {}
-                          runOnUiThread(() -> {
-                              if (id == token) {
+                                  if (id != token || isFinishing()) return;
                                   audioUrl = "";
                                   preparing = false;
-                                  Toast.makeText(this,"Could not load this audio.",Toast.LENGTH_LONG).show();
+                                  releasePlayer();
+                                  Toast.makeText(this,"Could not load this audio. Please try another song.",Toast.LENGTH_LONG).show();
                                   if (!isFinishing()) screen("Player");
-                              }
-                          });
-                      }
-                  }).start();
+                              });
+                          }
+                      }).start();
+                  } catch (Exception e) {
+                      audioUrl = "";
+                      preparing = false;
+                      releasePlayer();
+                      Toast.makeText(this,"Could not load this audio. Please try another song.",Toast.LENGTH_LONG).show();
+                      if (!isFinishing()) screen("Player");
+                  }
               }
 
               private void toggle() {
