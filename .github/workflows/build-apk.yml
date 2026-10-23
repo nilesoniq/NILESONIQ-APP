@@ -1,553 +1,553 @@
 name: NileSoniQ Android APK
 
 'on':
-push:
-branches:
-- main
-workflow_dispatch:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-name: Build NileSoniQ APK
-runs-on: ubuntu-latest
-timeout-minutes: 30
+  build:
+    name: Build NileSoniQ APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Set up Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Set up Android SDK
-    uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-  - name: Install Android SDK packages
-    shell: bash
-    run: |
-      set -euxo pipefail
-      sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-  - name: Install Gradle
-    shell: bash
-    run: |
-      set -euxo pipefail
-      wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
-      unzip -q gradle-8.5-bin.zip
-      echo "$GITHUB_WORKSPACE/gradle-8.5/bin" >> "$GITHUB_PATH"
-      "$GITHUB_WORKSPACE/gradle-8.5/bin/gradle" --version
+      - name: Install Gradle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip -q gradle-8.5-bin.zip
+          echo "$GITHUB_WORKSPACE/gradle-8.5/bin" >> "$GITHUB_PATH"
+          "$GITHUB_WORKSPACE/gradle-8.5/bin/gradle" --version
 
-  - name: Generate Android project
-    shell: bash
-    run: |
-      set -euxo pipefail
+      - name: Generate Android project
+        shell: bash
+        run: |
+          set -euxo pipefail
 
-      mkdir -p app/src/main/java/com/nilesoniq/app
-      mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/java/com/nilesoniq/app
+          mkdir -p app/src/main/res/values
 
-      cat > settings.gradle <<'EOF'
-      pluginManagement {
-          repositories {
-              google()
-              mavenCentral()
-              gradlePluginPortal()
-          }
-      }
-
-      dependencyResolutionManagement {
-          repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-          repositories {
-              google()
-              mavenCentral()
-          }
-      }
-
-      rootProject.name = 'NileSoniQ'
-      include ':app'
-      EOF
-
-      cat > build.gradle <<'EOF'
-      plugins {
-          id 'com.android.application' version '8.1.4' apply false
-      }
-      EOF
-
-      cat > app/build.gradle <<'EOF'
-      plugins {
-          id 'com.android.application'
-      }
-
-      android {
-          namespace 'com.nilesoniq.app'
-          compileSdk 34
-
-          defaultConfig {
-              applicationId 'com.nilesoniq.app'
-              minSdk 23
-              targetSdk 34
-              versionCode 4
-              versionName '1.3'
-          }
-
-          compileOptions {
-              sourceCompatibility JavaVersion.VERSION_17
-              targetCompatibility JavaVersion.VERSION_17
-          }
-      }
-      EOF
-
-      cat > app/src/main/res/values/strings.xml <<'EOF'
-      <resources>
-          <string name="app_name">NileSoniQ</string>
-      </resources>
-      EOF
-
-      cat > app/src/main/res/values/styles.xml <<'EOF'
-      <resources>
-          <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-              <item name="android:fontFamily">sans</item>
-              <item name="android:colorAccent">#FF7A00</item>
-              <item name="android:statusBarColor">#090909</item>
-              <item name="android:navigationBarColor">#090909</item>
-              <item name="android:windowLightStatusBar">false</item>
-          </style>
-      </resources>
-      EOF
-
-      cat > app/src/main/AndroidManifest.xml <<'EOF'
-      <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-          <uses-permission android:name="android.permission.INTERNET" />
-          <application
-              android:allowBackup="true"
-              android:label="@string/app_name"
-              android:usesCleartextTraffic="false"
-              android:theme="@style/AppTheme">
-              <activity
-                  android:name=".MainActivity"
-                  android:exported="true">
-                  <intent-filter>
-                      <action android:name="android.intent.action.MAIN" />
-                      <category android:name="android.intent.category.LAUNCHER" />
-                  </intent-filter>
-              </activity>
-          </application>
-      </manifest>
-      EOF
-
-      cat > app/src/main/java/com/nilesoniq/app/MainActivity.java <<'EOF'
-      package com.nilesoniq.app;
-
-      import android.app.Activity;
-      import android.os.Bundle;
-      import android.graphics.Color;
-      import android.graphics.Typeface;
-      import android.media.AudioAttributes;
-      import android.media.MediaPlayer;
-      import android.view.Gravity;
-      import android.view.View;
-      import android.widget.Button;
-      import android.widget.LinearLayout;
-      import android.widget.ScrollView;
-      import android.widget.TextView;
-      import android.widget.Toast;
-      import org.json.JSONArray;
-      import org.json.JSONObject;
-      import java.io.BufferedReader;
-      import java.io.InputStreamReader;
-      import java.net.HttpURLConnection;
-      import java.net.URL;
-
-      public class MainActivity extends Activity {
-          private final int bg = Color.rgb(9,9,9);
-          private final int panel = Color.rgb(23,23,23);
-          private final int orange = Color.rgb(255,122,0);
-          private final int white = Color.WHITE;
-          private final int muted = Color.rgb(175,175,175);
-          private LinearLayout root, content;
-          private String tab = "Home";
-          private MediaPlayer player;
-          private String title = "", artist = "", audioUrl = "";
-          private boolean playing = false, preparing = false;
-          private int token = 0;
-
-          @Override
-          public void onCreate(Bundle state) {
-              super.onCreate(state);
-              getWindow().setStatusBarColor(bg);
-              getWindow().setNavigationBarColor(bg);
-              screen("Home");
-          }
-
-          private int dp(int n) {
-              return (int)(n * getResources().getDisplayMetrics().density + 0.5f);
-          }
-
-          private TextView label(String s, int size, int color, boolean bold) {
-              TextView v = new TextView(this);
-              v.setText(s);
-              v.setTextSize(size);
-              v.setTextColor(color);
-              if (bold) v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-              return v;
-          }
-
-          private LinearLayout column() {
-              LinearLayout l = new LinearLayout(this);
-              l.setOrientation(LinearLayout.VERTICAL);
-              return l;
-          }
-
-          private void gap(LinearLayout l, int height) {
-              l.addView(new View(this), new LinearLayout.LayoutParams(1, dp(height)));
-          }
-
-          private void screen(String name) {
-              tab = name;
-              root = column();
-              root.setBackgroundColor(bg);
-              root.setPadding(dp(18),dp(14),dp(18),dp(8));
-
-              LinearLayout header = new LinearLayout(this);
-              header.setGravity(Gravity.CENTER_VERTICAL);
-              TextView logo = label("NileSoniQ",26,orange,true);
-              header.addView(logo,new LinearLayout.LayoutParams(0,-2,1));
-              header.addView(label("MUSIC • COMMUNITY",10,muted,true));
-              root.addView(header);
-              gap(root,18);
-
-              ScrollView scroll = new ScrollView(this);
-              content = column();
-              content.setPadding(0,0,0,dp(16));
-              scroll.addView(content);
-              root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-
-              LinearLayout nav = new LinearLayout(this);
-              nav.setGravity(Gravity.CENTER);
-              String[] names = {"Home","Discover","Player","Community","Profile"};
-              for (String n : names) {
-                  TextView item = label(n,10,n.equals(tab)?orange:muted,true);
-                  item.setGravity(Gravity.CENTER);
-                  item.setPadding(dp(2),dp(12),dp(2),dp(12));
-                  item.setOnClickListener(v -> screen(n));
-                  nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
               }
-              root.addView(nav);
-              setContentView(root);
-
-              if (name.equals("Home")) home();
-              else if (name.equals("Discover")) discover();
-              else if (name.equals("Player")) playerScreen();
-              else if (name.equals("Community")) community();
-              else profile();
           }
 
-          private void heading(String h, String sub) {
-              content.addView(label(h,25,white,true));
-              gap(content,6);
-              content.addView(label(sub,14,muted,false));
-              gap(content,18);
-          }
-
-          private void card(String h, String sub) {
-              LinearLayout box = column();
-              box.setBackgroundColor(panel);
-              box.setPadding(dp(15),dp(14),dp(15),dp(14));
-              box.addView(label(h,17,white,true));
-              gap(box,7);
-              box.addView(label(sub,13,muted,false));
-              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
-              p.bottomMargin = dp(12);
-              content.addView(box,p);
-          }
-
-          private void action(String name, Runnable run) {
-              Button b = new Button(this);
-              b.setText(name);
-              b.setAllCaps(false);
-              b.setTextColor(white);
-              b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(orange));
-              b.setOnClickListener(v -> run.run());
-              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,dp(48));
-              p.bottomMargin = dp(10);
-              content.addView(b,p);
-          }
-
-          private void home() {
-              heading("Music from everywhere.","Discover music. Find artists. Be part of the sound.");
-              card("YOUR MUSIC. YOUR COMMUNITY.",
-                   "Discover your next favourite sound and connect with music creators.");
-              action("Explore music",() -> screen("Discover"));
-              action("Open music player",() -> screen("Player"));
-              content.addView(label("LATEST APPROVED SONGS",12,orange,true));
-              gap(content,12);
-              loadSongs();
-          }
-
-          private void discover() {
-              heading("Discover music","Tap a song to start listening.");
-              action("Refresh songs",this::loadSongs);
-              loadSongs();
-          }
-
-          private void playerScreen() {
-              heading("Music player","Listen to songs from NileSoniQ.");
-              if (audioUrl.isEmpty()) {
-                  card("Nothing playing yet","Open Discover and tap a song to start playback.");
-              } else {
-                  card(title,artist + (preparing ? "\nPreparing audio…" :
-                      playing ? "\nPlaying now" : "\nPaused"));
-                  action(preparing ? "Preparing…" : playing ? "Pause" : "Play / Resume",
-                      this::toggle);
-                  action("Stop playback",this::stopPlayback);
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
               }
-              action("Browse songs",() -> screen("Discover"));
           }
 
-          private void community() {
-              heading("Community","Connect through music.");
-              card("Artist posts","Music news, releases, achievements and updates.");
-              card("Artist chat","Messaging needs account integration in a future update.");
+          rootProject.name = 'NileSoniQ'
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.1.4' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
           }
 
-          private void profile() {
-              heading("Your account","Listener and artist tools.");
-              card("Listener profile","Sign-in and account features are not connected in this build.");
-              card("Artist studio","Artist uploads, approval, statistics and earnings require account integration.");
-              card("Payments","This build does not modify the existing payment or withdrawal backend.");
-          }
+          android {
+              namespace 'com.nilesoniq.app'
+              compileSdk 34
 
-          private void loadSongs() {
-              content.addView(label("Loading songs…",14,muted,false));
-              new Thread(() -> {
-                  String body = null;
-                  String error = null;
-                  HttpURLConnection c = null;
-                  try {
-                      URL u = new URL("https://nilesoniq.com/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url&eq.approved=1&order=created_at.desc&limit=50");
-                      c = (HttpURLConnection)u.openConnection();
-                      c.setConnectTimeout(12000);
-                      c.setReadTimeout(12000);
-                      c.setRequestProperty("Accept","application/json");
-                      int code = c.getResponseCode();
-                      BufferedReader r = new BufferedReader(new InputStreamReader(
-                          code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()));
-                      StringBuilder b = new StringBuilder();
-                      String line;
-                      while ((line=r.readLine()) != null) b.append(line);
-                      r.close();
-                      if (code >= 200 && code < 300) body = b.toString();
-                      else error = "Song service returned HTTP " + code;
-                  } catch (Exception e) {
-                      error = "Unable to load songs. Check your internet connection.";
-                  } finally {
-                      if (c != null) c.disconnect();
+              defaultConfig {
+                  applicationId 'com.nilesoniq.app'
+                  minSdk 23
+                  targetSdk 34
+                  versionCode 4
+                  versionName '1.3'
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">NileSoniQ</string>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#FF7A00</item>
+                  <item name="android:statusBarColor">#090909</item>
+                  <item name="android:navigationBarColor">#090909</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="@string/app_name"
+                  android:usesCleartextTraffic="false"
+                  android:theme="@style/AppTheme">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/nilesoniq/app/MainActivity.java <<'EOF'
+          package com.nilesoniq.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.media.AudioAttributes;
+          import android.media.MediaPlayer;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+          import android.widget.Toast;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          import java.io.BufferedReader;
+          import java.io.InputStreamReader;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+
+          public class MainActivity extends Activity {
+              private final int bg = Color.rgb(9,9,9);
+              private final int panel = Color.rgb(23,23,23);
+              private final int orange = Color.rgb(255,122,0);
+              private final int white = Color.WHITE;
+              private final int muted = Color.rgb(175,175,175);
+              private LinearLayout root, content;
+              private String tab = "Home";
+              private MediaPlayer player;
+              private String title = "", artist = "", audioUrl = "";
+              private boolean playing = false, preparing = false;
+              private int token = 0;
+
+              @Override
+              public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  getWindow().setStatusBarColor(bg);
+                  getWindow().setNavigationBarColor(bg);
+                  screen("Home");
+              }
+
+              private int dp(int n) {
+                  return (int)(n * getResources().getDisplayMetrics().density + 0.5f);
+              }
+
+              private TextView label(String s, int size, int color, boolean bold) {
+                  TextView v = new TextView(this);
+                  v.setText(s);
+                  v.setTextSize(size);
+                  v.setTextColor(color);
+                  if (bold) v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                  return v;
+              }
+
+              private LinearLayout column() {
+                  LinearLayout l = new LinearLayout(this);
+                  l.setOrientation(LinearLayout.VERTICAL);
+                  return l;
+              }
+
+              private void gap(LinearLayout l, int height) {
+                  l.addView(new View(this), new LinearLayout.LayoutParams(1, dp(height)));
+              }
+
+              private void screen(String name) {
+                  tab = name;
+                  root = column();
+                  root.setBackgroundColor(bg);
+                  root.setPadding(dp(18),dp(14),dp(18),dp(8));
+
+                  LinearLayout header = new LinearLayout(this);
+                  header.setGravity(Gravity.CENTER_VERTICAL);
+                  TextView logo = label("NileSoniQ",26,orange,true);
+                  header.addView(logo,new LinearLayout.LayoutParams(0,-2,1));
+                  header.addView(label("MUSIC • COMMUNITY",10,muted,true));
+                  root.addView(header);
+                  gap(root,18);
+
+                  ScrollView scroll = new ScrollView(this);
+                  content = column();
+                  content.setPadding(0,0,0,dp(16));
+                  scroll.addView(content);
+                  root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+
+                  LinearLayout nav = new LinearLayout(this);
+                  nav.setGravity(Gravity.CENTER);
+                  String[] names = {"Home","Discover","Player","Community","Profile"};
+                  for (String n : names) {
+                      TextView item = label(n,10,n.equals(tab)?orange:muted,true);
+                      item.setGravity(Gravity.CENTER);
+                      item.setPadding(dp(2),dp(12),dp(2),dp(12));
+                      item.setOnClickListener(v -> screen(n));
+                      nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
                   }
-                  final String data = body, problem = error;
-                  runOnUiThread(() -> {
-                      if (isFinishing() || content == null) return;
-                      if (data == null) {
-                          content.addView(label(problem,14,muted,false));
-                          action("Try again",this::loadSongs);
-                          return;
-                      }
-                      try {
-                          Object parsed = new org.json.JSONTokener(data).nextValue();
-                          JSONArray songs = parsed instanceof JSONArray ? (JSONArray)parsed :
-                              parsed instanceof JSONObject ? ((JSONObject)parsed).optJSONArray("data") : null;
-                          if (songs == null || songs.length() == 0) {
-                              content.addView(label("No approved songs found.",14,muted,false));
-                              return;
-                          }
-                          for (int i=0;i<songs.length();i++) {
-                              JSONObject song = songs.optJSONObject(i);
-                              if (song == null) continue;
-                              String name = song.optString("title","Untitled song");
-                              String by = song.optString("artist","Unknown artist");
-                              String genre = song.optString("genre","Music");
-                              String playsCount = song.optString("plays","0");
-                              LinearLayout row = column();
-                              row.setBackgroundColor(panel);
-                              row.setPadding(dp(14),dp(14),dp(14),dp(14));
-                              row.addView(label(name,16,white,true));
-                              gap(row,5);
-                              row.addView(label(by+" • "+genre+" • "+playsCount+" plays",12,muted,false));
-                              gap(row,8);
-                              row.addView(label("▶ PLAY SONG",12,orange,true));
-                              row.setOnClickListener(v -> playSong(song));
-                              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
-                              p.bottomMargin = dp(10);
-                              content.addView(row,p);
-                          }
-                      } catch (Exception e) {
-                          content.addView(label("Unexpected song data format.",14,muted,false));
-                      }
-                  });
-              }).start();
-          }
+                  root.addView(nav);
+                  setContentView(root);
 
-          private void playSong(JSONObject song) {
-              String url = song.optString("audio_url","").trim();
-              if (!url.startsWith("https://")) {
-                  Toast.makeText(this,"This song has no valid secure audio URL.",Toast.LENGTH_LONG).show();
-                  return;
+                  if (name.equals("Home")) home();
+                  else if (name.equals("Discover")) discover();
+                  else if (name.equals("Player")) playerScreen();
+                  else if (name.equals("Community")) community();
+                  else profile();
               }
-              releasePlayer();
-              int id = ++token;
-              title = song.optString("title","Untitled song");
-              artist = song.optString("artist","Unknown artist");
-              audioUrl = url;
-              preparing = true;
-              playing = false;
-              screen("Player");
 
-              new Thread(() -> {
-                  MediaPlayer mp = new MediaPlayer();
-                  try {
-                      mp.setAudioAttributes(new AudioAttributes.Builder()
-                          .setUsage(AudioAttributes.USAGE_MEDIA)
-                          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-                      mp.setDataSource(url);
-                      mp.setOnPreparedListener(p -> runOnUiThread(() -> {
-                          if (id != token || isFinishing()) {
-                              p.release();
-                              return;
-                          }
-                          player = p;
-                          preparing = false;
-                          try {
-                              p.start();
-                              playing = true;
-                              screen("Player");
-                          } catch (Exception e) {
-                              Toast.makeText(this,"Unable to start playback.",Toast.LENGTH_LONG).show();
-                          }
-                      }));
-                      mp.setOnCompletionListener(p -> runOnUiThread(() -> {
-                          if (id == token) {
-                              playing = false;
-                              if (!isFinishing()) screen("Player");
-                          }
-                      }));
-                      mp.setOnErrorListener((p, what, extra) -> {
-                          runOnUiThread(() -> {
-                              if (id != token) return;
-                              audioUrl = "";
-                              releasePlayer();
-                              Toast.makeText(this,"This audio could not be played.",Toast.LENGTH_LONG).show();
-                              if (!isFinishing()) screen("Player");
-                          });
-                          return true;
-                      });
-                      mp.prepareAsync();
-                  } catch (Exception e) {
-                      try { mp.release(); } catch (Exception ignored) {}
-                      runOnUiThread(() -> {
-                          if (id == token) {
-                              audioUrl = "";
-                              preparing = false;
-                              Toast.makeText(this,"Could not load this audio.",Toast.LENGTH_LONG).show();
-                              if (!isFinishing()) screen("Player");
-                          }
-                      });
-                  }
-              }).start();
-          }
+              private void heading(String h, String sub) {
+                  content.addView(label(h,25,white,true));
+                  gap(content,6);
+                  content.addView(label(sub,14,muted,false));
+                  gap(content,18);
+              }
 
-          private void toggle() {
-              if (player == null || preparing) return;
-              try {
-                  if (player.isPlaying()) {
-                      player.pause();
-                      playing = false;
+              private void card(String h, String sub) {
+                  LinearLayout box = column();
+                  box.setBackgroundColor(panel);
+                  box.setPadding(dp(15),dp(14),dp(15),dp(14));
+                  box.addView(label(h,17,white,true));
+                  gap(box,7);
+                  box.addView(label(sub,13,muted,false));
+                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
+                  p.bottomMargin = dp(12);
+                  content.addView(box,p);
+              }
+
+              private void action(String name, Runnable run) {
+                  Button b = new Button(this);
+                  b.setText(name);
+                  b.setAllCaps(false);
+                  b.setTextColor(white);
+                  b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(orange));
+                  b.setOnClickListener(v -> run.run());
+                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,dp(48));
+                  p.bottomMargin = dp(10);
+                  content.addView(b,p);
+              }
+
+              private void home() {
+                  heading("Music from everywhere.","Discover music. Find artists. Be part of the sound.");
+                  card("YOUR MUSIC. YOUR COMMUNITY.",
+                       "Discover your next favourite sound and connect with music creators.");
+                  action("Explore music",() -> screen("Discover"));
+                  action("Open music player",() -> screen("Player"));
+                  content.addView(label("LATEST APPROVED SONGS",12,orange,true));
+                  gap(content,12);
+                  loadSongs();
+              }
+
+              private void discover() {
+                  heading("Discover music","Tap a song to start listening.");
+                  action("Refresh songs",this::loadSongs);
+                  loadSongs();
+              }
+
+              private void playerScreen() {
+                  heading("Music player","Listen to songs from NileSoniQ.");
+                  if (audioUrl.isEmpty()) {
+                      card("Nothing playing yet","Open Discover and tap a song to start playback.");
                   } else {
-                      player.start();
-                      playing = true;
+                      card(title,artist + (preparing ? "\nPreparing audio…" :
+                          playing ? "\nPlaying now" : "\nPaused"));
+                      action(preparing ? "Preparing…" : playing ? "Pause" : "Play / Resume",
+                          this::toggle);
+                      action("Stop playback",this::stopPlayback);
                   }
+                  action("Browse songs",() -> screen("Discover"));
+              }
+
+              private void community() {
+                  heading("Community","Connect through music.");
+                  card("Artist posts","Music news, releases, achievements and updates.");
+                  card("Artist chat","Messaging needs account integration in a future update.");
+              }
+
+              private void profile() {
+                  heading("Your account","Listener and artist tools.");
+                  card("Listener profile","Sign-in and account features are not connected in this build.");
+                  card("Artist studio","Artist uploads, approval, statistics and earnings require account integration.");
+                  card("Payments","This build does not modify the existing payment or withdrawal backend.");
+              }
+
+              private void loadSongs() {
+                  content.addView(label("Loading songs…",14,muted,false));
+                  new Thread(() -> {
+                      String body = null;
+                      String error = null;
+                      HttpURLConnection c = null;
+                      try {
+                          URL u = new URL("https://nilesoniq.com/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url&eq.approved=1&order=created_at.desc&limit=50");
+                          c = (HttpURLConnection)u.openConnection();
+                          c.setConnectTimeout(12000);
+                          c.setReadTimeout(12000);
+                          c.setRequestProperty("Accept","application/json");
+                          int code = c.getResponseCode();
+                          BufferedReader r = new BufferedReader(new InputStreamReader(
+                              code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()));
+                          StringBuilder b = new StringBuilder();
+                          String line;
+                          while ((line=r.readLine()) != null) b.append(line);
+                          r.close();
+                          if (code >= 200 && code < 300) body = b.toString();
+                          else error = "Song service returned HTTP " + code;
+                      } catch (Exception e) {
+                          error = "Unable to load songs. Check your internet connection.";
+                      } finally {
+                          if (c != null) c.disconnect();
+                      }
+                      final String data = body, problem = error;
+                      runOnUiThread(() -> {
+                          if (isFinishing() || content == null) return;
+                          if (data == null) {
+                              content.addView(label(problem,14,muted,false));
+                              action("Try again",this::loadSongs);
+                              return;
+                          }
+                          try {
+                              Object parsed = new org.json.JSONTokener(data).nextValue();
+                              JSONArray songs = parsed instanceof JSONArray ? (JSONArray)parsed :
+                                  parsed instanceof JSONObject ? ((JSONObject)parsed).optJSONArray("data") : null;
+                              if (songs == null || songs.length() == 0) {
+                                  content.addView(label("No approved songs found.",14,muted,false));
+                                  return;
+                              }
+                              for (int i=0;i<songs.length();i++) {
+                                  JSONObject song = songs.optJSONObject(i);
+                                  if (song == null) continue;
+                                  String name = song.optString("title","Untitled song");
+                                  String by = song.optString("artist","Unknown artist");
+                                  String genre = song.optString("genre","Music");
+                                  String playsCount = song.optString("plays","0");
+                                  LinearLayout row = column();
+                                  row.setBackgroundColor(panel);
+                                  row.setPadding(dp(14),dp(14),dp(14),dp(14));
+                                  row.addView(label(name,16,white,true));
+                                  gap(row,5);
+                                  row.addView(label(by+" • "+genre+" • "+playsCount+" plays",12,muted,false));
+                                  gap(row,8);
+                                  row.addView(label("▶ PLAY SONG",12,orange,true));
+                                  row.setOnClickListener(v -> playSong(song));
+                                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
+                                  p.bottomMargin = dp(10);
+                                  content.addView(row,p);
+                              }
+                          } catch (Exception e) {
+                              content.addView(label("Unexpected song data format.",14,muted,false));
+                          }
+                      });
+                  }).start();
+              }
+
+              private void playSong(JSONObject song) {
+                  String url = song.optString("audio_url","").trim();
+                  if (!url.startsWith("https://")) {
+                      Toast.makeText(this,"This song has no valid secure audio URL.",Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  releasePlayer();
+                  int id = ++token;
+                  title = song.optString("title","Untitled song");
+                  artist = song.optString("artist","Unknown artist");
+                  audioUrl = url;
+                  preparing = true;
+                  playing = false;
                   screen("Player");
-              } catch (Exception e) {
-                  Toast.makeText(this,"Playback is unavailable.",Toast.LENGTH_SHORT).show();
+
+                  new Thread(() -> {
+                      MediaPlayer mp = new MediaPlayer();
+                      try {
+                          mp.setAudioAttributes(new AudioAttributes.Builder()
+                              .setUsage(AudioAttributes.USAGE_MEDIA)
+                              .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
+                          mp.setDataSource(url);
+                          mp.setOnPreparedListener(p -> runOnUiThread(() -> {
+                              if (id != token || isFinishing()) {
+                                  p.release();
+                                  return;
+                              }
+                              player = p;
+                              preparing = false;
+                              try {
+                                  p.start();
+                                  playing = true;
+                                  screen("Player");
+                              } catch (Exception e) {
+                                  Toast.makeText(this,"Unable to start playback.",Toast.LENGTH_LONG).show();
+                              }
+                          }));
+                          mp.setOnCompletionListener(p -> runOnUiThread(() -> {
+                              if (id == token) {
+                                  playing = false;
+                                  if (!isFinishing()) screen("Player");
+                              }
+                          }));
+                          mp.setOnErrorListener((p, what, extra) -> {
+                              runOnUiThread(() -> {
+                                  if (id != token) return;
+                                  audioUrl = "";
+                                  releasePlayer();
+                                  Toast.makeText(this,"This audio could not be played.",Toast.LENGTH_LONG).show();
+                                  if (!isFinishing()) screen("Player");
+                              });
+                              return true;
+                          });
+                          mp.prepareAsync();
+                      } catch (Exception e) {
+                          try { mp.release(); } catch (Exception ignored) {}
+                          runOnUiThread(() -> {
+                              if (id == token) {
+                                  audioUrl = "";
+                                  preparing = false;
+                                  Toast.makeText(this,"Could not load this audio.",Toast.LENGTH_LONG).show();
+                                  if (!isFinishing()) screen("Player");
+                              }
+                          });
+                      }
+                  }).start();
               }
-          }
 
-          private void stopPlayback() {
-              releasePlayer();
-              audioUrl = "";
-              title = "";
-              artist = "";
-              screen("Player");
-          }
-
-          private void releasePlayer() {
-              token++;
-              MediaPlayer old = player;
-              player = null;
-              preparing = false;
-              playing = false;
-              if (old != null) {
-                  try { old.setOnPreparedListener(null); } catch (Exception ignored) {}
-                  try { old.setOnCompletionListener(null); } catch (Exception ignored) {}
-                  try { old.setOnErrorListener(null); } catch (Exception ignored) {}
-                  try { old.stop(); } catch (Exception ignored) {}
-                  try { old.release(); } catch (Exception ignored) {}
-              }
-          }
-
-          @Override
-          protected void onStop() {
-              super.onStop();
-              if (player != null) {
+              private void toggle() {
+                  if (player == null || preparing) return;
                   try {
                       if (player.isPlaying()) {
                           player.pause();
                           playing = false;
+                      } else {
+                          player.start();
+                          playing = true;
                       }
-                  } catch (Exception ignored) {}
+                      screen("Player");
+                  } catch (Exception e) {
+                      Toast.makeText(this,"Playback is unavailable.",Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void stopPlayback() {
+                  releasePlayer();
+                  audioUrl = "";
+                  title = "";
+                  artist = "";
+                  screen("Player");
+              }
+
+              private void releasePlayer() {
+                  token++;
+                  MediaPlayer old = player;
+                  player = null;
+                  preparing = false;
+                  playing = false;
+                  if (old != null) {
+                      try { old.setOnPreparedListener(null); } catch (Exception ignored) {}
+                      try { old.setOnCompletionListener(null); } catch (Exception ignored) {}
+                      try { old.setOnErrorListener(null); } catch (Exception ignored) {}
+                      try { old.stop(); } catch (Exception ignored) {}
+                      try { old.release(); } catch (Exception ignored) {}
+                  }
+              }
+
+              @Override
+              protected void onStop() {
+                  super.onStop();
+                  if (player != null) {
+                      try {
+                          if (player.isPlaying()) {
+                              player.pause();
+                              playing = false;
+                          }
+                      } catch (Exception ignored) {}
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  releasePlayer();
+                  super.onDestroy();
               }
           }
+          EOF
 
-          @Override
-          protected void onDestroy() {
-              releasePlayer();
-              super.onDestroy();
-          }
-      }
-      EOF
+      - name: Build APK
+        id: build_apk
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
 
-  - name: Build APK
-    id: build_apk
-    shell: bash
-    run: |
-      set -o pipefail
-      gradle --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NileSoniQ-Build-Logs
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
-  - name: Upload build diagnostics
-    if: always()
-    uses: actions/upload-artifact@v4
-    with:
-      name: NileSoniQ-Build-Logs
-      path: build.log
-      if-no-files-found: ignore
-      retention-days: 7
+      - name: Verify APK
+        if: success()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
-  - name: Verify APK
-    if: success()
-    shell: bash
-    run: |
-      set -euxo pipefail
-      test -s app/build/outputs/apk/debug/app-debug.apk
-      ls -lh app/build/outputs/apk/debug/app-debug.apk
-
-  - name: Upload APK
-    if: success()
-    uses: actions/upload-artifact@v4
-    with:
-      name: NileSoniQ-Android-APK
-      path: app/build/outputs/apk/debug/app-debug.apk
-      if-no-files-found: error
-      retention-days: 14
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NileSoniQ-Android-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
