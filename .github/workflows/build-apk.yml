@@ -9,53 +9,40 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-
-      - name: Auto Generate Orange N Logo
+      - name: Auto Generate Logo
         run: |
           python3 -m pip install Pillow -q
           python3 << 'PY'
           from PIL import Image, ImageDraw, ImageFont
           W=1024
-          img = Image.new('RGB', (W,W), '#CC6600')
+          img = Image.new('RGB', (W,W), '#FF6A00')
           draw = ImageDraw.Draw(img)
-          # Outer background
-          draw.rectangle([0,0,W,W], fill='#E67E00')
-          # Inner rounded square gradient
-          # Create gradient
+          # orange gradient
           for y in range(W):
-              t = y / W
-              r = int(255 * (1-t) + 235 * t)
-              g = int(110 * (1-t) + 160 * t)
-              b = int(0 * (1-t) + 0 * t)
-              # only inside rounded rect
-              draw.line([(80, y), (W-80, y)], fill=(r,g,b))
-          # Round corners mask
-          radius = 180
+              r = int(255 - y*0.12)
+              g = int(106 + y*0.08)
+              b = 0
+              draw.line([(0,y),(W,y)], fill=(max(r,200), max(g,80), b))
+          # rounded mask
           mask = Image.new('L', (W,W), 0)
           md = ImageDraw.Draw(mask)
-          md.rounded_rectangle([80,80,W-80,W-80], radius=radius, fill=255)
-          # Apply wave highlight bottom right
-          overlay = Image.new('RGB', (W,W), '#FFB000')
-          od = ImageDraw.Draw(overlay)
-          od.ellipse([-200, 400, W+200, W+400], fill='#FFC200')
-          # Composite
-          base = Image.new('RGB', (W,W), '#E67E00')
-          base.paste(img, mask=mask)
-          # Draw N
+          md.rounded_rectangle([60,60,W-60,W-60], radius=180, fill=255)
+          # apply mask
+          final = Image.new('RGB', (W,W), '#D97706')
+          final.paste(img, mask=mask)
+          d = ImageDraw.Draw(final)
           try:
-              fontN = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 550)
-              fontT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 70)
+              fN = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 520)
+              fT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 68)
           except:
-              fontN = ImageFont.load_default()
-              fontT = ImageFont.load_default()
-          d = ImageDraw.Draw(base)
-          # Center N
-          d.text((W//2, W//2-40), "N", fill="white", font=fontN, anchor="mm")
-          d.text((W//2, W//2+280), "NileSoniQ", fill="white", font=fontT, anchor="mm")
-          base.save("icon.png")
-          print("Auto logo generated")
+              fN = ImageFont.load_default()
+              fT = ImageFont.load_default()
+          d.text((W//2, W//2-30), "N", fill="white", font=fN, anchor="mm")
+          d.text((W//2, W//2+270), "NileSoniQ", fill="white", font=fT, anchor="mm")
+          final.save("icon.png")
+          print("OK icon.png created")
           PY
-
+          ls -lh icon.png
       - name: Build APK
         run: |
           mkdir -p app/src/main/java/com/nilesoniq/app
@@ -106,8 +93,8 @@ jobs:
               applicationId "com.nilesoniq.app"
               minSdk 21
               targetSdk 34
-              versionCode 11
-              versionName "3.1-auto-logo"
+              versionCode 12
+              versionName "3.2-auto-logo-fixed"
             }
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
@@ -118,12 +105,10 @@ jobs:
           allprojects { repositories { google(); mavenCentral() } }
           GRADLE
           echo "include ':app'" > settings.gradle
-
       - uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 8.5
           arguments: assembleDebug
-
       - uses: actions/upload-artifact@v4
         with:
           name: NileSoniQ-Auto-Logo-APK
