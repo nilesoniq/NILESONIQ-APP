@@ -1,193 +1,187 @@
 name: NileSoniQ FINAL GREEN
 
 'on':
-push:
-branches:
-- main
-workflow_dispatch:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-runs-on: ubuntu-latest
-timeout-minutes: 30
+  build:
+    name: Build NileSoniQ APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Set up Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Set up Android SDK
-    uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-  - name: Install Android SDK
-    run: |
-      sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
 
-  - name: Set up Gradle
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.5'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
 
-  - name: Create Android project
-    shell: bash
-    run: |
-      set -euo pipefail
+      - name: Generate Android project
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      mkdir -p app/src/main/java/com/nilesoniq/app
-      mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/java/com/nilesoniq/app
+          mkdir -p app/src/main/res/values
 
-      cat > gradle.properties <<'EOF'
-      android.useAndroidX=true
-      org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-      EOF
-
-      cat > settings.gradle <<'EOF'
-      pluginManagement {
-          repositories {
-              google()
-              mavenCentral()
-              gradlePluginPortal()
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
           }
-      }
-      dependencyResolutionManagement {
-          repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-          repositories {
-              google()
-              mavenCentral()
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
           }
-      }
-      rootProject.name = 'NileSoniQ'
-      include ':app'
-      EOF
+          rootProject.name = 'NileSoniQ'
+          include ':app'
+          EOF
 
-      cat > build.gradle <<'EOF'
-      plugins {
-          id 'com.android.application' version '8.1.4' apply false
-      }
-      EOF
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
 
-      cat > app/build.gradle <<'EOF'
-      plugins {
-          id 'com.android.application'
-      }
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.1.4' apply false
+          }
+          EOF
 
-      android {
-          namespace 'com.nilesoniq.app'
-          compileSdk 34
-
-          defaultConfig {
-              applicationId 'com.nilesoniq.app'
-              minSdk 23
-              targetSdk 34
-              versionCode 37
-              versionName '1.0'
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
           }
 
-          compileOptions {
-              sourceCompatibility JavaVersion.VERSION_17
-              targetCompatibility JavaVersion.VERSION_17
+          android {
+              namespace 'com.nilesoniq.app'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId 'com.nilesoniq.app'
+                  minSdk 23
+                  targetSdk 34
+                  versionCode 37
+                  versionName '1.0'
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
           }
-      }
-      EOF
+          EOF
 
-      cat > app/src/main/res/values/strings.xml <<'EOF'
-      <resources>
-          <string name="app_name">NileSoniQ</string>
-      </resources>
-      EOF
-
-      cat > app/src/main/res/values/styles.xml <<'EOF'
-      <resources>
-          <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-              <item name="android:colorAccent">#FF7A00</item>
-              <item name="android:statusBarColor">#D96500</item>
-              <item name="android:navigationBarColor">#111111</item>
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:colorAccent">#FF7A00</item>
+                  <item name="android:statusBarColor">#D96500</item>
+                  <item name="android:navigationBarColor">#111111</item>
           </style>
-      </resources>
-      EOF
+          </resources>
+          EOF
 
-      cat > app/src/main/AndroidManifest.xml <<'EOF'
-      <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-          <uses-permission android:name="android.permission.INTERNET"/>
-          <application
-              android:label="@string/app_name"
-              android:theme="@style/AppTheme">
-              <activity
-                  android:name=".MainActivity"
-                  android:exported="true">
-                  <intent-filter>
-                      <action android:name="android.intent.action.MAIN"/>
-                      <category android:name="android.intent.category.LAUNCHER"/>
-                  </intent-filter>
-              </activity>
-          </application>
-      </manifest>
-      EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <application
+                  android:label="NileSoniQ"
+                  android:theme="@style/AppTheme">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
-      cat > app/src/main/java/com/nilesoniq/app/MainActivity.java <<'EOF'
-      package com.nilesoniq.app;
+          cat > app/src/main/java/com/nilesoniq/app/MainActivity.java <<'EOF'
+          package com.nilesoniq.app;
 
-      import android.app.Activity;
-      import android.os.Bundle;
-      import android.graphics.Color;
-      import android.view.Gravity;
-      import android.widget.LinearLayout;
-      import android.widget.TextView;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.view.Gravity;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
 
-      public class MainActivity extends Activity {
-          @Override
-          protected void onCreate(Bundle state) {
-              super.onCreate(state);
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
 
-              LinearLayout layout = new LinearLayout(this);
-              layout.setOrientation(LinearLayout.VERTICAL);
-              layout.setGravity(Gravity.CENTER);
-              layout.setPadding(24, 24, 24, 24);
-              layout.setBackgroundColor(Color.rgb(17, 17, 17));
+                  LinearLayout layout = new LinearLayout(this);
+                  layout.setOrientation(LinearLayout.VERTICAL);
+                  layout.setGravity(Gravity.CENTER);
+                  layout.setBackgroundColor(Color.rgb(17, 17, 17));
 
-              TextView title = new TextView(this);
-              title.setText("NileSoniQ");
-              title.setTextSize(32);
-              title.setTextColor(Color.rgb(255, 122, 0));
-              title.setGravity(Gravity.CENTER);
-              layout.addView(title);
+                  TextView title = new TextView(this);
+                  title.setText("NileSoniQ");
+                  title.setTextSize(32);
+                  title.setTextColor(Color.rgb(255, 122, 0));
+                  title.setGravity(Gravity.CENTER);
+                  layout.addView(title);
 
-              TextView subtitle = new TextView(this);
-              subtitle.setText("Music • Artists • Discover");
-              subtitle.setTextSize(18);
-              subtitle.setTextColor(Color.WHITE);
-              subtitle.setGravity(Gravity.CENTER);
+                  TextView subtitle = new TextView(this);
+                  subtitle.setText("Music • Artists • Discover");
+                  subtitle.setTextSize(18);
+                  subtitle.setTextColor(Color.WHITE);
+                  subtitle.setGravity(Gravity.CENTER);
 
-              LinearLayout.LayoutParams params =
-                  new LinearLayout.LayoutParams(
-                      LinearLayout.LayoutParams.MATCH_PARENT,
-                      LinearLayout.LayoutParams.WRAP_CONTENT);
-              params.topMargin = 24;
-              layout.addView(subtitle, params);
+                  LinearLayout.LayoutParams params =
+                      new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT);
+                  params.topMargin = 24;
+                  layout.addView(subtitle, params);
 
-              setContentView(layout);
+                  setContentView(layout);
+              }
           }
-      }
-      EOF
+          EOF
 
-  - name: Build APK
-    run: gradle --no-daemon assembleDebug
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
 
-  - name: Verify APK
-    run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify APK
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
 
-  - name: Upload APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: NileSoniQ-FINAL-APK
-      path: app/build/outputs/apk/debug/app-debug.apk
-      if-no-files-found: error
-      retention-days: 14
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NileSoniQ-FINAL-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
