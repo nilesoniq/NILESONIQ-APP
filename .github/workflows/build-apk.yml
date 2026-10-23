@@ -507,9 +507,82 @@ jobs:
               }
 
               private void community() {
-                  heading("Community","Connect through music.");
-                  card("Artist posts","Music news, releases, achievements and updates.");
-                  card("Artist chat","Community messaging will be available in a future update.");
+                  heading("Community","Discover releases and connect through music.");
+                  LinearLayout actions = new LinearLayout(this);
+                  actions.setOrientation(LinearLayout.HORIZONTAL);
+                  Button refresh = new Button(this);
+                  refresh.setText("Refresh"); refresh.setAllCaps(false);
+                  refresh.setOnClickListener(v -> screen("Community"));
+                  actions.addView(refresh,new LinearLayout.LayoutParams(0,dp(44),1));
+                  Button share = new Button(this);
+                  share.setText("Share NileSoniQ"); share.setAllCaps(false);
+                  share.setOnClickListener(v -> {
+                      try {
+                          Intent send=new Intent(Intent.ACTION_SEND);
+                          send.setType("text/plain");
+                          send.putExtra(Intent.EXTRA_TEXT,"Discover Ugandan music on NileSoniQ: https://nilesoniq.com");
+                          startActivity(Intent.createChooser(send,"Share NileSoniQ"));
+                      } catch(Exception e) { Toast.makeText(this,"Sharing is not available on this device.",Toast.LENGTH_SHORT).show(); }
+                  });
+                  LinearLayout.LayoutParams shareParams=new LinearLayout.LayoutParams(0,dp(44),1);
+                  shareParams.leftMargin=dp(8); actions.addView(share,shareParams);
+                  content.addView(actions);
+                  gap(content,12);
+                  card("Community releases","Latest approved songs from the NileSoniQ catalogue.");
+                  card("Artist studio","Open your dashboard to check song reviews, plays and earnings.");
+                  if(signedInUser!=null) action("Open Artist Dashboard",this::artistDashboard);
+                  action("Upload a song",this::songUploadScreen);
+                  final LinearLayout feed=column();
+                  content.addView(feed);
+                  feed.addView(label("Loading latest community releases…",13,muted,false));
+                  new Thread(() -> {
+                      String raw=getApiText("/api/db/songs?select=id,title,artist,plays,cover_url,created_at,approved,review_status&eq.approved=true&order=created_at.desc&limit=30");
+                      JSONArray arr=dataArray(raw);
+                      runOnUiThread(() -> {
+                          if(isFinishing() || !tab.equals("Community")) return;
+                          feed.removeAllViews();
+                          if(arr.length()==0) {
+                              feed.addView(label("No approved releases were returned. Pull Refresh to check again.",13,muted,false));
+                              return;
+                          }
+                          for(int i=0;i<arr.length();i++) {
+                              JSONObject song=arr.optJSONObject(i); if(song==null) continue;
+                              String title=song.optString("title","Untitled song");
+                              String artist=song.optString("artist","NileSoniQ artist");
+                              long playCount=song.optLong("plays",0);
+                              LinearLayout item=column();
+                              item.setPadding(dp(13),dp(12),dp(13),dp(12));
+                              item.setBackground(rounded(Color.WHITE,14,border));
+                              item.addView(label(title,16,white,true));
+                              gap(item,4);
+                              item.addView(label(artist+" · "+playCount+" plays",12,muted,false));
+                              gap(item,8);
+                              Button open=new Button(this); open.setText("Listen"); open.setAllCaps(false);
+                              open.setOnClickListener(v -> playSong(song));
+                              item.addView(open);
+                              LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(-1,-2); ip.bottomMargin=dp(9);
+                              feed.addView(item,ip);
+                          }
+                      });
+                  }).start();
+              }
+
+              private void artistNotifications(String songSummary, String earnings, JSONArray payouts, JSONArray withdrawals, JSONArray songs) {
+                  heading("Notifications","Updates for your artist account.");
+                  card("Song review updates",songSummary);
+                  StringBuilder tx=new StringBuilder();
+                  for(int i=0;i<payouts.length();i++) {
+                      JSONObject o=payouts.optJSONObject(i); if(o==null) continue;
+                      if(tx.length()>0) tx.append("\\n");
+                      tx.append("Payout: UGX ").append(money(o.optDouble("amount",0))).append(" · ").append(o.optString("status","Unknown"));
+                  }
+                  for(int i=0;i<withdrawals.length();i++) {
+                      JSONObject o=withdrawals.optJSONObject(i); if(o==null) continue;
+                      if(tx.length()>0) tx.append("\\n");
+                      tx.append("Withdrawal: UGX ").append(money(o.optDouble("amount",0))).append(" · ").append(o.optString("status","Unknown"));
+                  }
+                  card("Wallet notifications",tx.length()==0?"No payout or withdrawal updates were returned.":tx.toString());
+                  action("Back to Artist Dashboard",this::artistDashboard);
               }
 
               private void profile() {
@@ -825,6 +898,9 @@ jobs:
                       final double finalBalance = balance;
                       final double finalWithdrawn = withdrawn;
                       final long finalPlays = plays;
+                      final int finalApproved = approved;
+                      final int finalPending = pending;
+                      final int finalRejected = rejected;
                       runOnUiThread(() -> {
                           if(isFinishing() || signedInUser==null || !tab.equals("Profile")) return;
                           content.removeAllViews();
@@ -832,18 +908,33 @@ jobs:
                           addArtistProfile(artistName.isEmpty()?email:artistName, email);
                           LinearLayout topActions = new LinearLayout(this);
                           topActions.setOrientation(LinearLayout.HORIZONTAL);
-                          Button editProfileButton = new Button(this);
-                          editProfileButton.setText("Edit Profile"); editProfileButton.setAllCaps(false);
-                          editProfileButton.setTextColor(orange);
-                          editProfileButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
-                          editProfileButton.setOnClickListener(v -> editArtistProfile());
-                          topActions.addView(editProfileButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+                          View spacer = new View(this);
+                          topActions.addView(spacer, new LinearLayout.LayoutParams(0, dp(44), 1));
+                          Button notificationsButton = new Button(this);
+                          notificationsButton.setText("♧");
+                          notificationsButton.setText("🔔");
+                          notificationsButton.setContentDescription("Artist notifications");
+                          notificationsButton.setTextSize(20);
+                          notificationsButton.setAllCaps(false);
+                          notificationsButton.setTextColor(orange);
+                          notificationsButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+                          notificationsButton.setOnClickListener(v -> artistNotifications(songSummary, earnings, payouts, withdrawals, songs));
+                          topActions.addView(notificationsButton, new LinearLayout.LayoutParams(dp(48), dp(44)));
                           Button settingsButton = new Button(this);
-                          settingsButton.setText("⚙ Settings"); settingsButton.setAllCaps(false);
+                          settingsButton.setText("⚙");
+                          settingsButton.setContentDescription("Artist settings");
+                          settingsButton.setTextSize(23);
+                          settingsButton.setAllCaps(false);
                           settingsButton.setTextColor(orange);
                           settingsButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
                           settingsButton.setOnClickListener(v -> artistSettings());
-                          topActions.addView(settingsButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+                          topActions.addView(settingsButton, new LinearLayout.LayoutParams(dp(48), dp(44)));
+                          Button editProfileButton = new Button(this);
+                          editProfileButton.setText("Edit Profile  ✎"); editProfileButton.setAllCaps(false);
+                          editProfileButton.setTextColor(orange);
+                          editProfileButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+                          editProfileButton.setOnClickListener(v -> editArtistProfile());
+                          topActions.addView(editProfileButton, new LinearLayout.LayoutParams(-2, dp(44)));
                           LinearLayout.LayoutParams topActionsParams = new LinearLayout.LayoutParams(-1, dp(44));
                           topActionsParams.bottomMargin = dp(12);
                           content.addView(topActions, topActionsParams);
@@ -868,7 +959,11 @@ jobs:
                           stats.addView(statCard("Total Earnings", "UGX " + money(finalWithdrawn + finalBalance), true), new LinearLayout.LayoutParams(0,-1,1));
                           LinearLayout.LayoutParams statGap = new LinearLayout.LayoutParams(0,-1,1);
                           statGap.leftMargin = dp(7); statGap.rightMargin = dp(7);
-                          stats.addView(statCard("Total Plays", String.valueOf(finalPlays), false), statGap);
+                          View playsCard = statCard("Total Plays", String.valueOf(finalPlays), false);
+                          playsCard.setOnClickListener(v -> dashboardDetail("Total Plays Statistics",
+                              "Total recorded plays: "+finalPlays+"\\nSongs tracked: "+songs.length()+"\\nApproved songs: "+approved+"\\nPending review: "+pending+"\\nRejected songs: "+rejected+"\\n\\nPlays are the totals currently returned by the NileSoniQ API. A dated daily plays graph requires play-history records from the server."));
+                          playsCard.setClickable(true);
+                          stats.addView(playsCard, statGap);
                           stats.addView(statCard("Balance Available", "UGX " + money(finalBalance), false), new LinearLayout.LayoutParams(0,-1,1));
                           LinearLayout.LayoutParams statsParams = new LinearLayout.LayoutParams(-1,dp(112));
                           statsParams.bottomMargin = dp(14);
