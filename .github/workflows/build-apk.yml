@@ -962,7 +962,7 @@ jobs:
                           statGap.leftMargin = dp(7); statGap.rightMargin = dp(7);
                           View playsCard = statCard("Total Plays", String.valueOf(finalPlays), false);
                           playsCard.setOnClickListener(v -> dashboardDetail("Total Plays Statistics",
-                              "Total recorded plays: "+finalPlays+"\\nSongs tracked: "+songs.length()+"\\nApproved songs: "+approved+"\\nPending review: "+pending+"\\nRejected songs: "+rejected+"\\n\\nPlays are the totals currently returned by the NileSoniQ API. A dated daily plays graph requires play-history records from the server."));
+                              "Total recorded plays: "+finalPlays+"\\nSongs tracked: "+songs.length()+"\\nApproved songs: "+finalApproved+"\\nPending review: "+finalPending+"\\nRejected songs: "+finalRejected+"\\n\\nPlays are the totals currently returned by the NileSoniQ API. A dated daily plays graph requires play-history records from the server."));
                           playsCard.setClickable(true);
                           stats.addView(playsCard, statGap);
                           stats.addView(statCard("Balance Available", "UGX " + money(finalBalance), false), new LinearLayout.LayoutParams(0,-1,1));
