@@ -1,3 +1,4 @@
+
 name: NileSoniQ Android APK
 
 'on':
@@ -27,6 +28,16 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: false
+
+      - name: Accept Android SDK licences
+        shell: bash
+        run: |
+          set -euxo pipefail
+          yes | sdkmanager --licenses || true
+          sdkmanager --licenses </dev/null
 
       - name: Install Android SDK packages
         shell: bash
@@ -520,7 +531,6 @@ jobs:
           EOF
 
       - name: Build APK
-        id: build_apk
         shell: bash
         run: |
           set -o pipefail
