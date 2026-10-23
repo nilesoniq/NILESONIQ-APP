@@ -10,10 +10,27 @@ permissions:
 contents: read
 
 jobs:
+validate:
+name: Validate workflow and source
+runs-on: ubuntu-latest
+steps:
+- name: Checkout repository
+uses: actions/checkout@v4
+
+  - name: Check workflow file
+    shell: bash
+    run: |
+      set -eu
+      test -f .github/workflows/build-apk.yml
+      echo "Workflow file exists."
+      echo "Branch: $GITHUB_REF_NAME"
+      echo "Commit: $GITHUB_SHA"
+
 build:
 name: Build NileSoniQ APK
 runs-on: ubuntu-latest
 timeout-minutes: 30
+needs: validate
 
 steps:
   - name: Checkout repository
@@ -25,28 +42,31 @@ steps:
       distribution: temurin
       java-version: '17'
 
-  - name: Install Android SDK
+  - name: Set up Android SDK
     uses: android-actions/setup-android@v3
 
-  - name: Install SDK packages
+  - name: Install Android SDK packages
+    shell: bash
     run: |
-      set -e
+      set -euxo pipefail
       sdkmanager --install \
         "platform-tools" \
         "platforms;android-34" \
         "build-tools;34.0.0"
 
-  - name: Download Gradle
+  - name: Install Gradle
+    shell: bash
     run: |
-      set -e
-      wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+      set -euxo pipefail
+      wget -nv https://services.gradle.org/distributions/gradle-8.5-bin.zip
       unzip -q gradle-8.5-bin.zip
       echo "$GITHUB_WORKSPACE/gradle-8.5/bin" >> "$GITHUB_PATH"
+      "$GITHUB_WORKSPACE/gradle-8.5/bin/gradle" --version
 
   - name: Generate Android project
     shell: bash
     run: |
-      set -euo pipefail
+      set -euxo pipefail
 
       mkdir -p app/src/main/java/com/nilesoniq/app
       mkdir -p app/src/main/res/values
@@ -68,11 +88,6 @@ steps:
       }
       rootProject.name = 'NileSoniQ'
       include ':app'
-      EOF
-
-      cat > gradle.properties <<'EOF'
-      android.useAndroidX=true
-      org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
       EOF
 
       cat > build.gradle <<'EOF'
@@ -117,7 +132,7 @@ steps:
               <item name="android:colorAccent">#FF7A00</item>
               <item name="android:statusBarColor">#D96500</item>
               <item name="android:navigationBarColor">#111111</item>
-          </style>
+      </style>
       </resources>
       EOF
 
@@ -185,13 +200,25 @@ steps:
       }
       EOF
 
-  - name: Build debug APK
+  - name: Build APK with diagnostic logs
+    shell: bash
     run: |
       set -o pipefail
-      gradle --no-daemon --stacktrace assembleDebug
+      gradle --no-daemon --stacktrace --info assembleDebug 2>&1 | tee build.log
+
+  - name: Upload build log even if build fails
+    if: always()
+    uses: actions/upload-artifact@v4
+    with:
+      name: NileSoniQ-Build-Logs
+      path: build.log
+      if-no-files-found: ignore
+      retention-days: 7
 
   - name: Verify APK
+    shell: bash
     run: |
+      set -euxo pipefail
       test -s app/build/outputs/apk/debug/app-debug.apk
       ls -lh app/build/outputs/apk/debug/app-debug.apk
 
