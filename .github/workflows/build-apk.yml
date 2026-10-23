@@ -115,12 +115,14 @@ jobs:
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <resources>
-              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
                   <item name="android:fontFamily">sans</item>
                   <item name="android:colorAccent">#FF7A00</item>
-                  <item name="android:statusBarColor">#090909</item>
-                  <item name="android:navigationBarColor">#090909</item>
-                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:statusBarColor">#FFFFFF</item>
+                  <item name="android:navigationBarColor">#FFFFFF</item>
+                  <item name="android:windowLightStatusBar">true</item>
+                  <item name="android:windowLightNavigationBar">true</item>
+                  <item name="android:windowBackground">#FFFFFF</item>
               </style>
           </resources>
           EOF
@@ -152,16 +154,20 @@ jobs:
           import android.os.Bundle;
           import android.graphics.Color;
           import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
           import android.media.AudioAttributes;
           import android.media.MediaPlayer;
           import android.content.SharedPreferences;
           import android.net.Uri;
           import android.database.Cursor;
           import android.text.InputType;
+          import android.text.Editable;
+          import android.text.TextWatcher;
           import android.view.Gravity;
           import android.view.View;
           import android.widget.Button;
           import android.widget.EditText;
+          import android.widget.HorizontalScrollView;
           import android.widget.LinearLayout;
           import android.widget.ScrollView;
           import android.widget.TextView;
@@ -173,17 +179,30 @@ jobs:
           import java.io.OutputStream;
           import java.net.HttpURLConnection;
           import java.net.URL;
+          import java.util.LinkedHashSet;
+          import java.util.Locale;
+          import java.util.Set;
 
           public class MainActivity extends Activity {
               private static final String API = "https://nilesoniq.com";
               private static final String PREFS = "nilesoniq_session";
               private static final String COOKIE_KEY = "session_cookie";
-              private final int bg = Color.rgb(9,9,9);
-              private final int panel = Color.rgb(23,23,23);
+
+              // NileSoniQ light theme: white surfaces, orange highlights and readable text.
+              private final int bg = Color.rgb(255,255,255);
+              private final int panel = Color.rgb(255,255,255);
               private final int orange = Color.rgb(255,122,0);
-              private final int white = Color.WHITE;
-              private final int muted = Color.rgb(175,175,175);
+              private final int white = Color.rgb(31,31,31);
+              private final int muted = Color.rgb(105,105,105);
+              private final int border = Color.rgb(235,235,235);
+
               private LinearLayout root, content;
+              private LinearLayout songResults, genreFilterBar;
+              private EditText songSearchInput;
+              private JSONArray cachedSongs = new JSONArray();
+              private String selectedGenre = "All";
+              private int songRequestId = 0;
+
               private String tab = "Home";
               private MediaPlayer player;
               private String title = "", artist = "", audioUrl = "";
@@ -202,14 +221,28 @@ jobs:
               @Override
               public void onCreate(Bundle state) {
                   super.onCreate(state);
-                  getWindow().setStatusBarColor(bg);
-                  getWindow().setNavigationBarColor(bg);
+                  getWindow().setStatusBarColor(Color.WHITE);
+                  getWindow().setNavigationBarColor(Color.WHITE);
+                  getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR |
+                      View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                  );
                   screen("Home");
                   checkSession();
               }
 
               private int dp(int n) {
                   return (int)(n * getResources().getDisplayMetrics().density + 0.5f);
+              }
+
+              private GradientDrawable rounded(int color, int radiusDp, int strokeColor) {
+                  GradientDrawable drawable = new GradientDrawable();
+                  drawable.setColor(color);
+                  drawable.setCornerRadius(dp(radiusDp));
+                  if (strokeColor != Color.TRANSPARENT) {
+                      drawable.setStroke(dp(1),strokeColor);
+                  }
+                  return drawable;
               }
 
               private TextView label(String s, int size, int color, boolean bold) {
@@ -232,6 +265,13 @@ jobs:
               }
 
               private void screen(String name) {
+                  // Invalidate outstanding song requests whenever a screen is rebuilt.
+                  // This prevents older network responses from writing into a new screen.
+                  songRequestId++;
+                  songResults = null;
+                  genreFilterBar = null;
+                  songSearchInput = null;
+
                   tab = name;
                   root = column();
                   root.setBackgroundColor(bg);
@@ -253,6 +293,8 @@ jobs:
 
                   LinearLayout nav = new LinearLayout(this);
                   nav.setGravity(Gravity.CENTER);
+                  nav.setBackground(rounded(Color.WHITE,16,border));
+                  nav.setElevation(dp(3));
                   String[] names = {"Home","Discover","Player","Community","Profile"};
                   for (String n : names) {
                       TextView item = label(n,10,n.equals(tab)?orange:muted,true);
@@ -261,7 +303,10 @@ jobs:
                       item.setOnClickListener(v -> screen(n));
                       nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
                   }
-                  root.addView(nav);
+                  LinearLayout.LayoutParams navParams =
+                      new LinearLayout.LayoutParams(-1,-2);
+                  navParams.topMargin = dp(8);
+                  root.addView(nav,navParams);
                   setContentView(root);
 
                   if (name.equals("Home")) home();
@@ -280,7 +325,8 @@ jobs:
 
               private void card(String h, String sub) {
                   LinearLayout box = column();
-                  box.setBackgroundColor(panel);
+                  box.setBackground(rounded(Color.WHITE,16,border));
+                  box.setElevation(dp(2));
                   box.setPadding(dp(15),dp(14),dp(15),dp(14));
                   box.addView(label(h,17,white,true));
                   gap(box,7);
@@ -294,7 +340,7 @@ jobs:
                   Button b = new Button(this);
                   b.setText(name);
                   b.setAllCaps(false);
-                  b.setTextColor(white);
+                  b.setTextColor(Color.WHITE);
                   b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(orange));
                   b.setOnClickListener(v -> run.run());
                   LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,dp(48));
@@ -311,7 +357,7 @@ jobs:
                   e.setTextSize(15);
                   e.setInputType(type);
                   e.setPadding(dp(12),dp(8),dp(12),dp(8));
-                  e.setBackgroundTintList(android.content.res.ColorStateList.valueOf(muted));
+                  e.setBackground(rounded(Color.WHITE,12,border));
                   LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,dp(52));
                   p.bottomMargin = dp(10);
                   content.addView(e,p);
@@ -326,12 +372,47 @@ jobs:
                   action("Open music player",() -> screen("Player"));
                   content.addView(label("LATEST APPROVED SONGS",12,orange,true));
                   gap(content,12);
+
+                  // Keep song rows inside a dedicated container so refreshes replace
+                  // old rows instead of appending duplicates to the page.
+                  songResults = column();
+                  content.addView(songResults);
                   loadSongs();
               }
 
               private void discover() {
-                  heading("Discover music","Tap a song to start listening.");
+                  heading("Discover music","Search by song, artist or genre, then tap a song to listen.");
+
+                  songSearchInput = field("Search songs, artists or genres",InputType.TYPE_CLASS_TEXT);
+                  songSearchInput.addTextChangedListener(new TextWatcher() {
+                      @Override
+                      public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                      @Override
+                      public void onTextChanged(CharSequence s, int start, int before, int count) {
+                          renderSongs();
+                      }
+
+                      @Override
+                      public void afterTextChanged(Editable s) {}
+                  });
+
+                  HorizontalScrollView genreScroll = new HorizontalScrollView(this);
+                  genreScroll.setHorizontalScrollBarEnabled(false);
+
+                  genreFilterBar = new LinearLayout(this);
+                  genreFilterBar.setOrientation(LinearLayout.HORIZONTAL);
+                  genreScroll.addView(genreFilterBar);
+
+                  LinearLayout.LayoutParams genreParams =
+                      new LinearLayout.LayoutParams(-1,-2);
+                  genreParams.bottomMargin = dp(10);
+                  content.addView(genreScroll,genreParams);
+
                   action("Refresh songs",this::loadSongs);
+
+                  songResults = column();
+                  content.addView(songResults);
                   loadSongs();
               }
 
@@ -783,7 +864,7 @@ jobs:
               }
 
               private String money(double amount) {
-                  return String.format(java.util.Locale.US,"%,.0f",amount);
+                  return String.format(Locale.US,"%,.0f",amount);
               }
 
               private String urlEncode(String value) {
@@ -859,7 +940,17 @@ jobs:
               }
 
               private void loadSongs() {
-                  content.addView(label("Loading songs…",14,muted,false));
+                  if (songResults == null) {
+                      songResults = column();
+                      content.addView(songResults);
+                  }
+
+                  // Each refresh supersedes any earlier request. Only the newest request
+                  // is allowed to update the currently displayed song list.
+                  final int requestId = ++songRequestId;
+                  songResults.removeAllViews();
+                  songResults.addView(label("Loading songs…",14,muted,false));
+
                   new Thread(() -> {
                       String body = null;
                       String error = null;
@@ -870,61 +961,195 @@ jobs:
                           c.setConnectTimeout(12000);
                           c.setReadTimeout(12000);
                           c.setRequestProperty("Accept","application/json");
+
                           int code = c.getResponseCode();
-                          BufferedReader r = new BufferedReader(new InputStreamReader(
-                              code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()));
-                          StringBuilder b = new StringBuilder();
-                          String line;
-                          while ((line=r.readLine()) != null) b.append(line);
-                          r.close();
-                          if (code >= 200 && code < 300) body = b.toString();
-                          else error = "Song service returned HTTP " + code;
+                          java.io.InputStream stream =
+                              code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+
+                          if (stream == null) {
+                              error = "Song service returned HTTP " + code;
+                          } else {
+                              BufferedReader r = new BufferedReader(
+                                  new InputStreamReader(stream,"UTF-8"));
+                              StringBuilder b = new StringBuilder();
+                              String line;
+                              while ((line=r.readLine()) != null) b.append(line);
+                              r.close();
+
+                              if (code >= 200 && code < 300) body = b.toString();
+                              else error = "Song service returned HTTP " + code;
+                          }
                       } catch (Exception e) {
                           error = "Unable to load songs. Check your internet connection.";
                       } finally {
                           if (c != null) c.disconnect();
                       }
-                      final String data = body, problem = error;
+
+                      final String data = body;
+                      final String problem = error;
+
                       runOnUiThread(() -> {
-                          if (isFinishing() || content == null) return;
-                          if (data == null) {
-                              content.addView(label(problem,14,muted,false));
-                              action("Try again",this::loadSongs);
+                          if (isFinishing() ||
+                              requestId != songRequestId ||
+                              (!"Home".equals(tab) && !"Discover".equals(tab)) ||
+                              songResults == null) {
                               return;
                           }
+
+                          songResults.removeAllViews();
+
+                          if (data == null) {
+                              songResults.addView(label(
+                                  problem == null ? "Unable to load songs." : problem,
+                                  14,muted,false));
+
+                              Button retry = new Button(this);
+                              retry.setText("Try again");
+                              retry.setAllCaps(false);
+                              retry.setTextColor(Color.WHITE);
+                              retry.setBackgroundTintList(
+                                  android.content.res.ColorStateList.valueOf(orange));
+                              retry.setOnClickListener(v -> loadSongs());
+
+                              LinearLayout.LayoutParams retryParams =
+                                  new LinearLayout.LayoutParams(-1,dp(48));
+                              retryParams.bottomMargin = dp(10);
+                              songResults.addView(retry,retryParams);
+                              return;
+                          }
+
                           try {
                               Object parsed = new org.json.JSONTokener(data).nextValue();
-                              JSONArray songs = parsed instanceof JSONArray ? (JSONArray)parsed :
-                                  parsed instanceof JSONObject ? ((JSONObject)parsed).optJSONArray("data") : null;
-                              if (songs == null || songs.length() == 0) {
-                                  content.addView(label("No approved songs found.",14,muted,false));
+
+                              JSONArray songs =
+                                  parsed instanceof JSONArray ? (JSONArray)parsed :
+                                  parsed instanceof JSONObject ?
+                                      ((JSONObject)parsed).optJSONArray("data") : null;
+
+                              if (songs == null && parsed instanceof JSONObject) {
+                                  songs = ((JSONObject)parsed).optJSONArray("records");
+                              }
+
+                              if (songs == null) {
+                                  songResults.addView(label(
+                                      "Unexpected song data format.",14,muted,false));
                                   return;
                               }
-                              for (int i=0;i<songs.length();i++) {
-                                  JSONObject song = songs.optJSONObject(i);
-                                  if (song == null) continue;
-                                  String name = song.optString("title","Untitled song");
-                                  String by = song.optString("artist","Unknown artist");
-                                  String genre = song.optString("genre","Music");
-                                  String playsCount = song.optString("plays","0");
-                                  LinearLayout row = column();
-                                  row.setBackgroundColor(panel);
-                                  row.setPadding(dp(14),dp(14),dp(14),dp(14));
-                                  row.addView(label(name,16,white,true));
-                                  gap(row,5);
-                                  row.addView(label(by+" • "+genre+" • "+playsCount+" plays",12,muted,false));
-                                  gap(row,8);
-                                  row.addView(label("▶ PLAY SONG",12,orange,true));
-                                  row.setOnClickListener(v -> playSong(song));
-                                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
-                                  p.bottomMargin = dp(10);
-                                  content.addView(row,p);
-                              }
+
+                              cachedSongs = songs;
+                              renderSongs();
                           } catch (Exception e) {
-                              content.addView(label("Unexpected song data format.",14,muted,false));
+                              songResults.removeAllViews();
+                              songResults.addView(label(
+                                  "Unexpected song data format.",14,muted,false));
                           }
                       });
                   }).start();
+              }
+
+              private void renderSongs() {
+                  if (songResults == null) return;
+
+                  // Always rebuild the dedicated results container instead of
+                  // appending rows. This prevents duplicate songs after refresh.
+                  songResults.removeAllViews();
+
+                  if (genreFilterBar != null) {
+                      genreFilterBar.removeAllViews();
+
+                      Set<String> genres = new LinkedHashSet<>();
+                      genres.add("All");
+
+                      for (int i = 0; i < cachedSongs.length(); i++) {
+                          JSONObject item = cachedSongs.optJSONObject(i);
+                          if (item == null) continue;
+
+                          String genre = item.optString("genre","").trim();
+                          if (!genre.isEmpty()) genres.add(genre);
+                      }
+
+                      if (!genres.contains(selectedGenre)) {
+                          selectedGenre = "All";
+                      }
+
+                      for (String genre : genres) {
+                          Button filter = new Button(this);
+                          filter.setText(genre);
+                          filter.setAllCaps(false);
+                          filter.setTextSize(12);
+                          filter.setTextColor(
+                              genre.equalsIgnoreCase(selectedGenre) ? Color.WHITE : white);
+                          filter.setBackgroundTintList(
+                              android.content.res.ColorStateList.valueOf(
+                                  genre.equalsIgnoreCase(selectedGenre) ? orange : panel));
+
+                          filter.setOnClickListener(v -> {
+                              selectedGenre = genre;
+                              renderSongs();
+                          });
+
+                          LinearLayout.LayoutParams filterParams =
+                              new LinearLayout.LayoutParams(-2,dp(42));
+                          filterParams.rightMargin = dp(6);
+                          genreFilterBar.addView(filter,filterParams);
+                      }
+                  }
+
+                  String query = songSearchInput == null ? "" :
+                      songSearchInput.getText().toString().trim().toLowerCase(Locale.ROOT);
+
+                  int shown = 0;
+
+                  for (int i = 0; i < cachedSongs.length(); i++) {
+                      JSONObject song = cachedSongs.optJSONObject(i);
+                      if (song == null) continue;
+
+                      String name = song.optString("title","Untitled song");
+                      String by = song.optString("artist","Unknown artist");
+                      String genre = song.optString("genre","Music");
+
+                      String searchable =
+                          (name + " " + by + " " + genre).toLowerCase(Locale.ROOT);
+
+                      if (!query.isEmpty() && !searchable.contains(query)) continue;
+
+                      if (!"All".equalsIgnoreCase(selectedGenre) &&
+                          !genre.trim().equalsIgnoreCase(selectedGenre)) {
+                          continue;
+                      }
+
+                      String playsCount = song.optString("plays","0");
+
+                      LinearLayout row = column();
+                      row.setBackground(rounded(Color.WHITE,14,border));
+                      row.setElevation(dp(2));
+                      row.setPadding(dp(14),dp(14),dp(14),dp(14));
+
+                      row.addView(label(name,16,white,true));
+                      gap(row,5);
+                      row.addView(label(
+                          by + " • " + genre + " • " + playsCount + " plays",
+                          12,muted,false));
+                      gap(row,8);
+                      row.addView(label("▶ PLAY SONG",12,orange,true));
+
+                      row.setOnClickListener(v -> playSong(song));
+
+                      LinearLayout.LayoutParams rowParams =
+                          new LinearLayout.LayoutParams(-1,-2);
+                      rowParams.bottomMargin = dp(10);
+                      songResults.addView(row,rowParams);
+                      shown++;
+                  }
+
+                  if (cachedSongs.length() == 0) {
+                      songResults.addView(label(
+                          "No approved songs found.",14,muted,false));
+                  } else if (shown == 0) {
+                      songResults.addView(label(
+                          "No songs match your search and genre filter.",
+                          14,muted,false));
+                  }
               }
 
               private void playSong(JSONObject song) {
