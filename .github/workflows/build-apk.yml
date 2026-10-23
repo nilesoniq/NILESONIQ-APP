@@ -368,7 +368,7 @@ jobs:
                   } else {
                       card("Sign in or create an account",
                           "Use the same email and password you use on nilesoniq.com.");
-                      action(authMode.equals("login") ? "Create a new account" : "I already have an account",
+                      action(authMode.equals("login") ? "Don't have an account? Sign up" : "Already have an account? Sign in",
                           () -> {
                               authMode = authMode.equals("login") ? "register" : "login";
                               profile();
@@ -715,6 +715,10 @@ jobs:
                           if (!genre.isEmpty()) row.put("genre",genre);
                           if (!description.isEmpty()) row.put("description",description);
                           row.put("terms_accepted",true);
+                          // New uploads must remain private until an authorized admin approves them.
+                          row.put("approved",false);
+                          row.put("review_status","pending");
+                          row.put("status","pending");
                           ApiResult result = request("POST","/api/db/songs",row);
                           if (result.code < 200 || result.code >= 300 || result.body == null || result.body.optJSONArray("data") == null) {
                               String error = result.body == null ? "Song details could not be saved." : result.body.optString("error","Song details could not be saved.");
