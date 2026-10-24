@@ -650,7 +650,7 @@ jobs:
                   content.addView(feed);
                   feed.addView(label("Loading latest community releases…",13,muted,false));
                   new Thread(() -> {
-                      String raw=getApiText("/api/db/songs?select=id,title,artist,plays,cover_url,created_at,approved,review_status&eq.approved=true&order=created_at.desc&limit=30");
+                      String raw=getApiText("/api/db/songs?select=id,title,artist,plays,cover_url,audio_url,file_url,created_at,approved,review_status&eq.approved=true&order=created_at.desc&limit=30");
                       JSONArray arr=dataArray(raw);
                       runOnUiThread(() -> {
                           if(isFinishing() || !tab.equals("Community")) return;
@@ -919,6 +919,8 @@ jobs:
                   box.setOnClickListener(v -> {
                       if (title.equals("Total Earnings")) dashboardDetail("Earnings Statistics", "Total earnings recorded: UGX " + value.replace("UGX ", "") + "\n\nThis total is calculated from the wallet balance and payout records available to your account. Daily chart values will only appear when the backend provides dated earnings records.");
                       else if (title.equals("Total Plays")) dashboardDetail("Plays Statistics", "Total recorded plays: " + value + "\n\nToday’s plays and historical daily counts require dated play records from the server. This screen will not estimate daily plays from lifetime totals.");
+                      else if (title.equals("Listeners")) dashboardDetail("Listeners", value.equals("—") ? "The current artist API response does not provide a unique listener count yet." : "Listeners reported by the artist API: " + value);
+                      else if (title.equals("Following")) dashboardDetail("Following", value.equals("—") ? "The current artist API response does not provide a following count yet." : "Accounts followed: " + value);
                       else dashboardDetail("Available Balance", "Available balance: " + value + "\n\nUse the Withdraw button from your artist dashboard to continue through the existing withdrawal process.");
                   });
                   return box;
@@ -1173,6 +1175,17 @@ jobs:
                           heading("Artist Dashboard","Your songs, performance and earnings");
                           String shownArtistName = resolvedArtist == null ? artistName : resolvedArtist.optString("name", artistName);
                           addArtistProfile(shownArtistName.isEmpty()?email:shownArtistName, email);
+                          long listenerCount = firstLong(resolvedArtist, "listeners_count", "total_listeners", "unique_listeners", "listeners");
+                          long followingCount = firstLong(resolvedArtist, "following_count", "accounts_following", "following_total");
+                          LinearLayout audienceStats = new LinearLayout(this);
+                          audienceStats.setOrientation(LinearLayout.HORIZONTAL);
+                          audienceStats.addView(statCard("Listeners", listenerCount < 0 ? "—" : String.valueOf(listenerCount), false), new LinearLayout.LayoutParams(0, dp(88), 1));
+                          LinearLayout.LayoutParams followingParams = new LinearLayout.LayoutParams(0, dp(88), 1);
+                          followingParams.leftMargin = dp(8);
+                          audienceStats.addView(statCard("Following", followingCount < 0 ? "—" : String.valueOf(followingCount), false), followingParams);
+                          LinearLayout.LayoutParams audienceParams = new LinearLayout.LayoutParams(-1, dp(88));
+                          audienceParams.bottomMargin = dp(12);
+                          content.addView(audienceStats, audienceParams);
                           LinearLayout topActions = new LinearLayout(this);
                           topActions.setOrientation(LinearLayout.HORIZONTAL);
                           View spacer = new View(this);
@@ -1340,7 +1353,6 @@ jobs:
                           }
                           action("▣  Withdraw",this::withdrawalScreen);
                           action("Upload a song in the app",this::songUploadScreen);
-                          action("⚙  Settings",this::artistSettings);
                           action("Refresh Artist Dashboard",this::artistDashboard);
                           action("Back to Profile",() -> screen("Profile"));
                       });
@@ -1712,7 +1724,7 @@ jobs:
                   HttpURLConnection c=null;
                   try {
                       c=(HttpURLConnection)new URL(API+path).openConnection();
-                      c.setRequestMethod("GET"); c.setConnectTimeout(12000); c.setReadTimeout(12000);
+                      c.setRequestMethod("GET"); c.setConnectTimeout(6000); c.setReadTimeout(7000);
                       c.setRequestProperty("Accept","application/json");
                       String cookie=getCookie(); if(!cookie.isEmpty()) c.setRequestProperty("Cookie",cookie);
                       int code=c.getResponseCode();
@@ -1834,10 +1846,10 @@ jobs:
                       String error = null;
                       HttpURLConnection c = null;
                       try {
-                          URL u = new URL(API + "/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url,created_at&eq.approved=1&order=created_at.desc&limit=200");
+                          URL u = new URL(API + "/api/db/songs?select=id,title,artist,genre,plays,cover_url,audio_url,file_url,created_at&eq.approved=1&order=created_at.desc&limit=100");
                           c = (HttpURLConnection)u.openConnection();
-                          c.setConnectTimeout(12000);
-                          c.setReadTimeout(12000);
+                          c.setConnectTimeout(6000);
+                          c.setReadTimeout(7000);
                           c.setRequestProperty("Accept","application/json");
 
                           int code = c.getResponseCode();
@@ -2108,15 +2120,50 @@ jobs:
                   }
               }
 
+              private long firstLong(JSONObject object, String... keys) {
+                  if (object == null) return -1L;
+                  for (String key : keys) {
+                      Object value = object.opt(key);
+                      if (value instanceof Number) return Math.max(0L, ((Number)value).longValue());
+                      if (value instanceof String) {
+                          try { return Math.max(0L, Long.parseLong(((String)value).trim())); }
+                          catch (Exception ignored) {}
+                      }
+                  }
+                  return -1L;
+              }
+
+              private String resolveAudioUrl(JSONObject song) {
+                  if (song == null) return "";
+                  String[] keys = {"audio_url", "file_url", "stream_url", "url"};
+                  for (String key : keys) {
+                      String value = song.optString(key, "").trim();
+                      if (value.isEmpty() || value.equalsIgnoreCase("null")) continue;
+                      if (value.startsWith("https://")) return value;
+                      if (value.startsWith("http://")) {
+                          // The official site redirects HTTP to HTTPS; use its secure origin.
+                          if (value.startsWith("http://nilesoniq.com/")) return "https://nilesoniq.com/" + value.substring("http://nilesoniq.com/".length());
+                          if (value.startsWith("http://www.nilesoniq.com/")) return "https://www.nilesoniq.com/" + value.substring("http://www.nilesoniq.com/".length());
+                          continue;
+                      }
+                      if (value.startsWith("/")) return API + value;
+                      if (value.startsWith("api/storage/public/")) return API + "/" + value;
+                      // Older song records may contain only the R2 object path, not its public URL.
+                      if (!value.contains("://") && !value.startsWith("data:")) {
+                          return API + "/api/storage/public/audio/" + value.replace("\\", "/");
+                      }
+                  }
+                  return "";
+              }
+
               private void playSong(JSONObject song) {
                   if (song == null) {
                       Toast.makeText(this,"This song is not available.",Toast.LENGTH_LONG).show();
                       return;
                   }
-                  String url = song.optString("audio_url","").trim();
-                  if (url.isEmpty()) url = song.optString("file_url","").trim();
-                  if (!url.startsWith("https://")) {
-                      Toast.makeText(this,"This song has no valid secure audio URL.",Toast.LENGTH_LONG).show();
+                  String url = resolveAudioUrl(song);
+                  if (url.isEmpty() || !url.startsWith("https://")) {
+                      Toast.makeText(this,"This song has no playable audio link saved. The song owner/admin needs to update its audio URL.",Toast.LENGTH_LONG).show();
                       return;
                   }
                   // Capture the validated URL in an effectively-final variable for the background thread.
