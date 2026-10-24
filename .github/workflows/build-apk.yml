@@ -184,6 +184,7 @@ jobs:
           import android.view.Gravity;
           import android.view.View;
           import android.widget.Button;
+          import android.widget.CheckBox;
           import android.widget.ImageView;
           import android.widget.EditText;
           import android.widget.FrameLayout;
@@ -231,10 +232,12 @@ jobs:
               private boolean playing = false, preparing = false;
               private int token = 0;
               private JSONObject signedInUser;
+              private JSONObject signedInAdmin;
               private boolean authBusy = false;
               private String authMode = "login";
               private EditText nameInput, phoneInput, emailInput, passwordInput;
               private EditText uploadTitleInput, uploadArtistInput, uploadGenreInput, uploadDescriptionInput;
+              private CheckBox uploadRightsCheckbox;
               private Uri selectedAudioUri, selectedCoverUri, selectedAvatarUri;
               private boolean uploadBusy = false;
               private static final int PICK_AUDIO = 6101;
@@ -704,8 +707,11 @@ jobs:
                       card("Signed in",email + (artistName.isEmpty() ? "" : "\n"+artistName));
                       action("Open Artist Dashboard",this::artistDashboard);
                       action("Refresh account session",this::checkSession);
+                      if (signedInAdmin != null) {
+                          action("Admin Tools",this::adminToolsScreen);
+                      }
                       action("Log out",this::logout);
-                      card("Artist studio","Review your song submissions, recorded plays, wallet balance and withdrawal history, and upload songs directly in the app.");
+                      card("Artist studio","Review your song submissions, recorded plays, earnings and withdrawal history, and upload songs directly in the app.");
                   } else {
                       card("Sign in or create an account",
                           "Use the same email and password you use on nilesoniq.com.");
@@ -771,6 +777,7 @@ jobs:
                                   signedInUser = user == null ? new JSONObject() : user;
                                   authMode = "login";
                                   screen("Profile");
+                                  checkSession(); // Refresh the Worker-provided admin/artist metadata after the session cookie is saved.
                                   Toast.makeText(this,"Account connected successfully.",Toast.LENGTH_LONG).show();
                               });
                           } else {
@@ -802,13 +809,16 @@ jobs:
                       ApiResult result = request("GET","/api/auth/me",null);
                       JSONObject response = result.body;
                       JSONObject user = response == null ? null : response.optJSONObject("user");
+                      JSONObject admin = response == null ? null : response.optJSONObject("admin");
                       boolean authenticated = response != null && response.optBoolean("authenticated") && user != null;
                       runOnUiThread(() -> {
                           if (isFinishing()) return;
                           if (authenticated) {
                               signedInUser = user;
+                              signedInAdmin = admin;
                           } else {
                               signedInUser = null;
+                              signedInAdmin = null;
                               if (response != null && !response.optBoolean("authenticated")) {
                                   clearCookie();
                               }
@@ -926,6 +936,7 @@ jobs:
                   heading("Settings", "Manage your NileSoniQ app and account");
                   card("Account", signedInUser == null ? "Not signed in" : signedInUser.optString("email", "Artist account"));
                   action("Edit Profile", this::editArtistProfile);
+                  action("Request a withdrawal", this::withdrawalScreen);
                   action("Refresh account session", this::checkSession);
                   action("Log out", this::logout);
                   action("Back to Artist Dashboard", this::artistDashboard);
@@ -1113,25 +1124,35 @@ jobs:
                               list.append("\nPlays: ").append(song.optLong("plays",0));
                           }
                       }
-                      double balance=0, withdrawn=0;
-                      for(int i=0;i<wallets.length();i++) { JSONObject w=wallets.optJSONObject(i); if(w!=null) balance += w.optDouble("balance",0); }
-                      for(int i=0;i<payouts.length();i++) {
-                          JSONObject w=payouts.optJSONObject(i); if(w==null) continue;
-                          String st=w.optString("status","").toLowerCase();
-                          if(st.equals("completed")||st.equals("success")||st.equals("successful")||st.equals("paid")) withdrawn += w.optDouble("amount",0);
+                      long approvedPlays=0;
+                      for(int i=0;i<songs.length();i++) {
+                          JSONObject song=songs.optJSONObject(i);
+                          if(song!=null && (song.optBoolean("approved",false) || "approved".equalsIgnoreCase(song.optString("review_status","")))) {
+                              approvedPlays += Math.max(0,song.optLong("plays",0));
+                          }
                       }
+                      double grossEarnings=approvedPlays*0.5d;
+                      double reservedWithdrawals=0, withdrawn=0;
                       int pendingWithdrawals=0;
                       for(int i=0;i<withdrawals.length();i++) {
                           JSONObject w=withdrawals.optJSONObject(i); if(w==null) continue;
-                          String st=w.optString("status","").toLowerCase();
-                          if(st.equals("completed")||st.equals("success")||st.equals("successful")||st.equals("paid")) withdrawn += w.optDouble("amount",0);
-                          else if(st.equals("pending")||st.equals("processing")||st.equals("requested")) pendingWithdrawals++;
+                          String st=w.optString("status","").toLowerCase(Locale.US);
+                          double amount=Math.max(0,w.optDouble("amount",0));
+                          if(st.equals("pending")||st.equals("processing")) {
+                              pendingWithdrawals++;
+                              reservedWithdrawals += amount;
+                          } else if(st.equals("completed")||st.equals("success")||st.equals("successful")||st.equals("paid")) {
+                              withdrawn += amount;
+                              reservedWithdrawals += amount;
+                          }
                       }
-                      final String songSummary="Songs: "+songs.length()+"\nApproved: "+approved+"\nPending review: "+pending+"\nRejected: "+rejected+"\nRecorded plays: "+plays;
-                      final String earnings="Available balance: UGX "+money(balance)+"\nAmount withdrawn (recorded as paid): UGX "+money(withdrawn)+"\nPending withdrawal requests: "+pendingWithdrawals+"\nMinimum withdrawal: UGX 10,000";
+                      double balance=Math.max(0,grossEarnings-reservedWithdrawals);
+                      final String songSummary="Songs: "+songs.length()+"\nApproved: "+approved+"\nPending review: "+pending+"\nRejected: "+rejected+"\nRecorded plays: "+plays+"\nApproved-song plays used for earnings: "+approvedPlays;
+                      final String earnings="Gross earnings (UGX 0.5 per approved play): UGX "+money(grossEarnings)+"\nAvailable balance: UGX "+money(balance)+"\nAmount recorded as paid: UGX "+money(withdrawn)+"\nPending withdrawal requests: "+pendingWithdrawals+"\nMinimum withdrawal: UGX 10,000";
                       final String songList=list.length()==0?"No song records were returned for this account.":list.toString();
                       final double finalBalance = balance;
                       final double finalWithdrawn = withdrawn;
+                      final double finalTotalEarned = grossEarnings;
                       final long finalPlays = plays;
                       final int finalApproved = approved;
                       final int finalPending = pending;
@@ -1202,7 +1223,7 @@ jobs:
                           LinearLayout stats = new LinearLayout(this);
                           stats.setOrientation(LinearLayout.HORIZONTAL);
                           stats.setGravity(Gravity.CENTER_VERTICAL);
-                          stats.addView(statCard("Total Earnings", "UGX " + money(finalWithdrawn + finalBalance), true), new LinearLayout.LayoutParams(0,-1,1));
+                          stats.addView(statCard("Total Earnings", "UGX " + money(finalTotalEarned), true), new LinearLayout.LayoutParams(0,-1,1));
                           LinearLayout.LayoutParams statGap = new LinearLayout.LayoutParams(0,-1,1);
                           statGap.leftMargin = dp(7); statGap.rightMargin = dp(7);
                           View playsCard = statCard("Total Plays", String.valueOf(finalPlays), false);
@@ -1317,13 +1338,182 @@ jobs:
                           if(artistRaw.startsWith("ERROR") || songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
                               card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
                           }
-                          action("▣  Withdraw",this::artistSettings);
+                          action("▣  Withdraw",this::withdrawalScreen);
                           action("Upload a song in the app",this::songUploadScreen);
                           action("⚙  Settings",this::artistSettings);
                           action("Refresh Artist Dashboard",this::artistDashboard);
                           action("Back to Profile",() -> screen("Profile"));
                       });
                   }).start();
+              }
+
+              private void withdrawalScreen() {
+                  if (signedInUser == null) { screen("Profile"); return; }
+                  content.removeAllViews();
+                  heading("Request a withdrawal", "Requests are checked by the NileSoniQ backend. Minimum amount: UGX 10,000.");
+                  EditText amountInput = field("Amount in UGX (minimum 10000)", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                  EditText methodInput = field("Payment method (e.g. MTN Mobile Money)", InputType.TYPE_CLASS_TEXT);
+                  EditText detailsInput = field("Payment details / registered phone number", InputType.TYPE_CLASS_TEXT);
+                  card("Important", "Only your available approved-song earnings can be requested. A successful submission creates a pending request; it does not mean payment has already been sent.");
+                  action("Submit withdrawal request", () -> {
+                      String amountText=amountInput.getText().toString().trim();
+                      String method=methodInput.getText().toString().trim();
+                      String details=detailsInput.getText().toString().trim();
+                      double amount;
+                      try { amount=Double.parseDouble(amountText); } catch(Exception e) { amount=0; }
+                      if(!Double.isFinite(amount) || amount<10000 || method.isEmpty() || details.isEmpty()) {
+                          Toast.makeText(this,"Enter at least UGX 10,000, a payment method and payment details.",Toast.LENGTH_LONG).show();
+                          return;
+                      }
+                      JSONObject payload=new JSONObject();
+                      try { payload.put("amount",amount); payload.put("payment_method",method); payload.put("payment_details",details); }
+                      catch(Exception ignored) {}
+                      actionBusyToast("Submitting withdrawal request…");
+                      new Thread(() -> {
+                          ApiResult result=request("POST","/api/db/withdrawal_requests",payload);
+                          boolean ok=result.code>=200 && result.code<300 && result.body!=null && (!result.body.has("error") || result.body.isNull("error"));
+                          String message=ok ? "Withdrawal request submitted. Status: pending." : (result.body==null ? "Withdrawal request failed (HTTP "+result.code+")." : result.body.optString("error","Withdrawal request failed."));
+                          runOnUiThread(() -> {
+                              if(isFinishing()) return;
+                              content.removeAllViews();
+                              heading(ok?"Request submitted":"Request not submitted", "Backend response");
+                              card(ok?"Pending withdrawal": "Unable to submit", message);
+                              action("Back to Artist Dashboard",this::artistDashboard);
+                          });
+                      }).start();
+                  });
+                  action("Back to Artist Dashboard",this::artistDashboard);
+              }
+
+              private void actionBusyToast(String message) {
+                  Toast.makeText(this,message,Toast.LENGTH_SHORT).show();
+              }
+
+              private void adminToolsScreen() {
+                  if(signedInAdmin==null) {
+                      Toast.makeText(this,"Admin access required.",Toast.LENGTH_LONG).show();
+                      screen("Profile");
+                      return;
+                  }
+                  boolean superAdmin="super_admin".equalsIgnoreCase(signedInAdmin.optString("role",""));
+                  content.removeAllViews();
+                  heading("Admin Tools", "Actions are restricted by the authenticated NileSoniQ Worker role.");
+                  action("Review pending song submissions",this::adminReviewSongs);
+                  if(superAdmin) {
+                      action("Copyright removal",this::copyrightRemovalScreen);
+                      action("PesaJet collection (platform deposit)",() -> pesajetScreen("collection"));
+                      action("PesaJet disbursement (platform payout)",() -> pesajetScreen("disbursement"));
+                  }
+                  action("Refresh account permissions",this::checkSession);
+                  action("Back to Profile",() -> screen("Profile"));
+              }
+
+              private void adminReviewSongs() {
+                  if(signedInAdmin==null) { screen("Profile"); return; }
+                  content.removeAllViews();
+                  heading("Song approvals", "Approve or reject pending submissions through the Worker.");
+                  card("Loading submissions…", "Fetching pending songs.");
+                  new Thread(() -> {
+                      JSONArray songs=dataArray(getApiText("/api/admin/songs?status=pending"));
+                      runOnUiThread(() -> {
+                          if(isFinishing()) return;
+                          content.removeAllViews();
+                          heading("Song approvals", "Pending submissions: "+songs.length());
+                          if(songs.length()==0) card("No pending songs", "There are no pending submissions returned by the backend.");
+                          for(int i=0;i<songs.length();i++) {
+                              JSONObject song=songs.optJSONObject(i); if(song==null) continue;
+                              String id=song.optString("id","");
+                              String name=song.optString("title","Untitled song");
+                              card(name, "Artist: "+song.optString("artist","Unknown")+"\nStatus: "+song.optString("review_status","pending")+"\nID: "+id);
+                              action("Approve: "+name, () -> reviewSong(id,"approved"));
+                              action("Reject: "+name, () -> reviewSong(id,"rejected"));
+                          }
+                          action("Refresh submissions",this::adminReviewSongs);
+                          action("Back to Admin Tools",this::adminToolsScreen);
+                      });
+                  }).start();
+              }
+
+              private void reviewSong(String songId, String status) {
+                  if(songId==null || songId.isEmpty()) return;
+                  JSONObject payload=new JSONObject();
+                  try { payload.put("status",status); } catch(Exception ignored) {}
+                  new Thread(() -> {
+                      ApiResult result=request("POST","/api/admin/songs/"+urlEncode(songId)+"/review",payload);
+                      boolean ok=result.code>=200 && result.code<300 && result.body!=null && result.body.optBoolean("success");
+                      runOnUiThread(() -> {
+                          Toast.makeText(this,ok?"Song marked "+status+".":(result.body==null?"Review failed (HTTP "+result.code+").":result.body.optString("error","Review failed.")),Toast.LENGTH_LONG).show();
+                          adminReviewSongs();
+                      });
+                  }).start();
+              }
+
+              private void copyrightRemovalScreen() {
+                  if(signedInAdmin==null || !"super_admin".equalsIgnoreCase(signedInAdmin.optString("role",""))) { screen("Profile"); return; }
+                  content.removeAllViews();
+                  heading("Copyright removal", "Record an audited removal of a song or artist. This action is restricted to Super Admin.");
+                  EditText typeInput=field("Content type: song or artist",InputType.TYPE_CLASS_TEXT);
+                  EditText idInput=field("Exact song ID or artist profile/user ID",InputType.TYPE_CLASS_TEXT);
+                  EditText reasonInput=field("Reason (at least 5 characters)",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+                  action("Record copyright removal", () -> {
+                      String type=typeInput.getText().toString().trim().toLowerCase(Locale.US);
+                      String id=idInput.getText().toString().trim();
+                      String reason=reasonInput.getText().toString().trim();
+                      if(!(type.equals("song")||type.equals("artist")) || id.isEmpty() || reason.length()<5) {
+                          Toast.makeText(this,"Choose song or artist, enter its exact ID and a reason of at least 5 characters.",Toast.LENGTH_LONG).show(); return;
+                      }
+                      JSONObject payload=new JSONObject();
+                      try { payload.put("content_type",type); payload.put("content_id",id); payload.put("reason",reason); } catch(Exception ignored) {}
+                      new Thread(() -> {
+                          ApiResult result=request("POST","/api/admin/copyright-removals",payload);
+                          boolean ok=result.code>=200 && result.code<300 && result.body!=null && result.body.optBoolean("success");
+                          String msg=ok?"Copyright removal recorded and content restricted by the backend.":(result.body==null?"Request failed (HTTP "+result.code+").":result.body.optString("error","Copyright removal failed."));
+                          runOnUiThread(() -> {
+                              if(isFinishing()) return;
+                              content.removeAllViews(); heading(ok?"Removal recorded":"Removal failed","Worker response"); card(ok?"Success":"Not completed",msg);
+                              action("Back to Admin Tools",this::adminToolsScreen);
+                          });
+                      }).start();
+                  });
+                  action("Back to Admin Tools",this::adminToolsScreen);
+              }
+
+              private void pesajetScreen(String type) {
+                  if(signedInAdmin==null || !"super_admin".equalsIgnoreCase(signedInAdmin.optString("role",""))) { screen("Profile"); return; }
+                  boolean collection="collection".equals(type);
+                  content.removeAllViews();
+                  heading(collection?"PesaJet Collection":"PesaJet Disbursement", collection?"Request a platform wallet deposit.":"Request a platform wallet payout.");
+                  EditText amountInput=field("Amount in UGX (minimum 1000)",InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                  EditText phoneInput=field("Ugandan mobile-money phone number",InputType.TYPE_CLASS_PHONE);
+                  EditText providerInput=field("Provider: MTN or Airtel",InputType.TYPE_CLASS_TEXT);
+                  EditText descriptionInput=field("Description (optional)",InputType.TYPE_CLASS_TEXT);
+                  card("Payment safety", "The Worker requires Super Admin access and a configured PesaJet API key. A request may remain pending until the provider webhook confirms its final status. Do not submit the same payment again if the result is uncertain.");
+                  action("Submit PesaJet request", () -> {
+                      double amount; try { amount=Double.parseDouble(amountInput.getText().toString().trim()); } catch(Exception e) { amount=0; }
+                      String phone=phoneInput.getText().toString().trim();
+                      String provider=providerInput.getText().toString().trim().toLowerCase(Locale.US);
+                      if(!Double.isFinite(amount)||amount<1000||phone.isEmpty()||!(provider.equals("mtn")||provider.equals("airtel"))) {
+                          Toast.makeText(this,"Enter an amount of at least UGX 1,000, a phone number, and MTN or Airtel.",Toast.LENGTH_LONG).show(); return;
+                      }
+                      JSONObject payload=new JSONObject();
+                      try { payload.put("amount",amount); payload.put("phone_number",phone); payload.put("provider",provider); payload.put("description",descriptionInput.getText().toString().trim()); } catch(Exception ignored) {}
+                      new Thread(() -> {
+                          ApiResult result=request("POST",collection?"/api/payments/pesajet-collection":"/api/payments/pesajet-disbursement",payload);
+                          boolean ok=result.code>=200&&result.code<300&&result.body!=null&&result.body.optBoolean("success");
+                          String msg;
+                          if(result.body==null) msg="No valid response (HTTP "+result.code+").";
+                          else msg=result.body.optString("message",result.body.optString("error",ok?("Status: "+result.body.optString("status","PENDING")+"\nReference: "+result.body.optString("reference","Not returned")):"Payment request failed."));
+                          final String resultMessage=msg;
+                          runOnUiThread(() -> {
+                              if(isFinishing()) return;
+                              content.removeAllViews(); heading(ok?"PesaJet request accepted":"PesaJet request not accepted","Provider status response");
+                              card(ok?"Transaction status":"Request error",resultMessage);
+                              if(result.body!=null) card("Reference",result.body.optString("reference","Not returned")+"\nTransaction ID: "+result.body.optString("transactionId","Not returned")+"\nStatus: "+result.body.optString("status","Unknown"));
+                              action("Back to Admin Tools",this::adminToolsScreen);
+                          });
+                      }).start();
+                  });
+                  action("Back to Admin Tools",this::adminToolsScreen);
               }
 
               private void songUploadScreen() {
@@ -1345,7 +1535,12 @@ jobs:
                   action("Choose audio file",() -> pickFile(PICK_AUDIO));
                   card("Cover artwork (optional)",selectedCoverUri == null ? "No cover selected." : getDisplayName(selectedCoverUri));
                   action("Choose cover artwork",() -> pickFile(PICK_COVER));
-                  card("Before submitting","You confirm that you own or have permission to upload this music. The song will be saved as Pending review and will only appear publicly after admin approval.");
+                  card("Before submitting","Your song stays pending until an authorized admin approves it. You must actively confirm you own or have permission to upload the music.");
+                  uploadRightsCheckbox = new CheckBox(this);
+                  uploadRightsCheckbox.setText("I own or am authorized to upload this music and accept the upload terms.");
+                  uploadRightsCheckbox.setTextColor(white);
+                  uploadRightsCheckbox.setButtonTintList(android.content.res.ColorStateList.valueOf(orange));
+                  content.addView(uploadRightsCheckbox,new LinearLayout.LayoutParams(-1,-2));
                   action(uploadBusy ? "Uploading…" : "Submit song for review",this::submitSongUpload);
                   action("Back to Artist Dashboard",this::artistDashboard);
               }
@@ -1452,8 +1647,13 @@ jobs:
                   String songArtist = uploadArtistInput == null ? "" : uploadArtistInput.getText().toString().trim();
                   String genre = uploadGenreInput == null ? "" : uploadGenreInput.getText().toString().trim();
                   String description = uploadDescriptionInput == null ? "" : uploadDescriptionInput.getText().toString().trim();
+                  boolean rightsAccepted = uploadRightsCheckbox != null && uploadRightsCheckbox.isChecked();
                   if (songTitle.isEmpty() || songArtist.isEmpty() || selectedAudioUri == null) {
                       Toast.makeText(this,"Enter the song title and artist, then choose an audio file.",Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  if (!rightsAccepted) {
+                      Toast.makeText(this,"Please confirm that you own or are authorized to upload this music.",Toast.LENGTH_LONG).show();
                       return;
                   }
                   uploadBusy = true;
@@ -1473,7 +1673,7 @@ jobs:
                           if (!coverUrl.isEmpty()) row.put("cover_url",coverUrl);
                           if (!genre.isEmpty()) row.put("genre",genre);
                           if (!description.isEmpty()) row.put("description",description);
-                          row.put("terms_accepted",true);
+                          row.put("terms_accepted",rightsAccepted);
                           // New uploads must remain private until an authorized admin approves them.
                           row.put("approved",false);
                           row.put("review_status","pending");
@@ -1921,6 +2121,7 @@ jobs:
                   }
                   // Capture the validated URL in an effectively-final variable for the background thread.
                   final String playbackUrl = url;
+                  final String playbackSongId = song.optString("id", "").trim();
                   releasePlayer();
                   final int id = ++token;
                   title = song.optString("title","Untitled song");
@@ -1946,6 +2147,7 @@ jobs:
                           try {
                               p.start();
                               playing = true;
+                              if (!playbackSongId.isEmpty()) recordSongPlay(playbackSongId);
                               screen("Player");
                           } catch (Exception e) {
                               audioUrl = "";
@@ -1992,6 +2194,16 @@ jobs:
                       Toast.makeText(this,"Could not load this audio. Please try another song.",Toast.LENGTH_LONG).show();
                       if (!isFinishing()) screen("Player");
                   }
+              }
+
+              private void recordSongPlay(String songId) {
+                  if(songId==null || songId.trim().isEmpty()) return;
+                  new Thread(() -> {
+                      JSONObject payload=new JSONObject();
+                      try { payload.put("song_id",songId); } catch(Exception ignored) {}
+                      ApiResult result=request("POST","/api/rpc/record_song_play",payload);
+                      if(result.code<200 || result.code>=300) Log.w("NileSoniQ", "Play record request failed with HTTP " + result.code);
+                  }).start();
               }
 
               private void toggle() {
