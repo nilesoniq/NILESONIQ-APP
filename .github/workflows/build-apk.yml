@@ -1441,7 +1441,6 @@ jobs:
                           }
                           action("▣  Withdraw",this::withdrawalScreen);
                           action("Upload a song in the app",this::songUploadScreen);
-                          action("⚙  Settings",this::artistSettings);
                           action("Refresh Artist Dashboard",this::artistDashboard);
                           action("Back to Profile",() -> screen("Profile"));
                       });
@@ -2211,18 +2210,23 @@ jobs:
 
               private String resolveAudioUrl(JSONObject song) {
                   if (song == null) return "";
-                  String[] keys = {"audio_url", "file_url", "stream_url", "url"};
+                  // Prefer the explicit stream/audio URL, then legacy file URL fields.
+                  String[] keys = {"audio_url", "stream_url", "file_url", "url"};
                   for (String key : keys) {
                       String value = song.optString(key, "").trim();
                       if (value.isEmpty() || value.equalsIgnoreCase("null")) continue;
+                      value = value.replace("\\", "/");
+                      if (value.startsWith("//")) value = "https:" + value;
+                      // Android blocks cleartext traffic; upgrade HTTP links before playback.
+                      if (value.startsWith("http://")) value = "https://" + value.substring("http://".length());
                       if (value.startsWith("https://")) return value;
-                      if (value.startsWith("http://nilesoniq.com/")) return "https://nilesoniq.com/" + value.substring("http://nilesoniq.com/".length());
-                      if (value.startsWith("http://www.nilesoniq.com/")) return "https://www.nilesoniq.com/" + value.substring("http://www.nilesoniq.com/".length());
                       if (value.startsWith("/")) return API + value;
                       if (value.startsWith("api/storage/public/")) return API + "/" + value;
+                      if (value.startsWith("storage/v1/object/public/")) return API + "/" + value;
                       if (value.startsWith("audio/")) value = value.substring("audio/".length());
                       if (!value.contains("://") && !value.startsWith("data:")) {
-                          return API + "/api/storage/public/audio/" + value.replace("\\", "/");
+                          value = value.replace(" ", "%20");
+                          return API + "/api/storage/public/audio/" + value;
                       }
                   }
                   return "";
