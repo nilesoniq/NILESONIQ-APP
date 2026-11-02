@@ -727,7 +727,15 @@ jobs:
                               String imageUrl=post.optString("image_url","");if(!imageUrl.isEmpty())addRemoteImage(item,imageUrl,dp(220));
                               gap(item,8);
                               LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
-                              Button discuss=new Button(this);discuss.setText("Comments & reactions");discuss.setAllCaps(false);discuss.setOnClickListener(v->openPostDiscussion(post));actions.addView(discuss,new LinearLayout.LayoutParams(-1,dp(44)));item.addView(actions);
+                              Button like=new Button(this);like.setAllCaps(false);like.setText("♡  Like");
+                              Button discuss=new Button(this);discuss.setText("Comment");discuss.setAllCaps(false);
+                              LinearLayout.LayoutParams actionLp=new LinearLayout.LayoutParams(0,dp(44),1);actionLp.rightMargin=dp(6);actions.addView(like,actionLp);
+                              actions.addView(discuss,new LinearLayout.LayoutParams(0,dp(44),1));item.addView(actions);
+                              final String postId=post.optString("id","");
+                              like.setEnabled(!postId.isEmpty());discuss.setEnabled(!postId.isEmpty());
+                              like.setOnClickListener(v->{if(signedInUser==null){Toast.makeText(this,"Sign in to like posts.",Toast.LENGTH_SHORT).show();screen("Profile");return;}like.setEnabled(false);new Thread(()->{try{JSONObject body=new JSONObject();body.put("action","react");ApiResult r=request("POST","/api/artist/post-interactions?post_id="+urlEncode(postId),body);if(r.code<200||r.code>=300)throw new Exception(r.body==null?"Could not like this post.":r.body.optString("error","Could not like this post."));JSONObject result=r.body;runOnUiThread(()->{like.setText((result!=null&&result.optBoolean("reacted")?"♥  Liked":"♡  Like")+"  ·  "+(result==null?0:result.optInt("reaction_count",0)));like.setEnabled(true);});}catch(Exception e){runOnUiThread(()->{like.setEnabled(true);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}}).start();});
+                              discuss.setOnClickListener(v->openPostDiscussion(post));
+                              new Thread(()->{String raw=getApiText("/api/artist/post-interactions?post_id="+urlEncode(postId));try{JSONObject state=new JSONObject(raw);runOnUiThread(()->{if(like.getParent()!=null)like.setText((state.optBoolean("reacted")?"♥  Liked":"♡  Like")+"  ·  "+state.optInt("reaction_count",0));});}catch(Exception ignored){}}).start();
                               LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(-1,-2);ip.bottomMargin=dp(10);feed.addView(item,ip);
                           }
                       });
@@ -816,17 +824,34 @@ jobs:
                   }
               }
 
+              private String resolveImageUrl(String raw,String bucket){
+                  if(raw==null)return "";String value=raw.trim().replace("\\","/");if(value.isEmpty()||"null".equalsIgnoreCase(value))return "";
+                  if(value.startsWith("//"))value="https:"+value;
+                  if(value.startsWith("http://"))value="https://"+value.substring(7);
+                  if(value.startsWith("https://")){
+                      try{java.net.URI uri=new java.net.URI(value);String path=uri.getRawPath();int marker=path==null?-1:path.indexOf("/storage/v1/object/public/");if(marker>=0){String object=path.substring(marker+"/storage/v1/object/public/".length());return API+"/api/storage/public/"+object;}}catch(Exception ignored){}
+                      return value;
+                  }
+                  if(value.startsWith("/api/storage/public/"))return API+value;
+                  if(value.startsWith("api/storage/public/"))return API+"/"+value;
+                  if(value.startsWith("storage/v1/object/public/"))return API+"/api/"+value;
+                  while(value.startsWith("/"))value=value.substring(1);
+                  if(value.startsWith(bucket+"/"))value=value.substring(bucket.length()+1);
+                  try{value=java.net.URLEncoder.encode(value,"UTF-8").replace("%2F","/");}catch(Exception ignored){}
+                  return API+"/api/storage/public/"+bucket+"/"+value;
+              }
               private void addRemoteAvatar(LinearLayout parent,String imageUrl,int size){
                   ImageView image=new ImageView(this);makeCircular(image,Color.rgb(255,224,194));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(size,size);lp.bottomMargin=dp(6);parent.addView(image,lp);
-                  loadRemoteBitmap(image,imageUrl);
+                  loadRemoteBitmap(image,imageUrl,"avatars");
               }
-              private void addRemoteImage(LinearLayout parent, String imageUrl, int height) {
-                  ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(rounded(Color.rgb(245,243,240),12,border));
-                  LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,height);params.topMargin=dp(8);parent.addView(image,params);loadRemoteBitmap(image,imageUrl);
+              private void addRemoteImage(LinearLayout parent, String imageUrl, int maxHeight) {
+                  ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setAdjustViewBounds(true);image.setMaxHeight(maxHeight);image.setBackground(rounded(Color.rgb(245,243,240),12,border));
+                  LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(8);parent.addView(image,params);loadRemoteBitmap(image,imageUrl,"covers");
               }
-              private void loadRemoteBitmap(ImageView image,String imageUrl){
-                  if(imageUrl==null||imageUrl.trim().isEmpty())return;
-                  new Thread(()->{HttpURLConnection c=null;try{String target=imageUrl.trim();if(!target.startsWith("https://")&&!target.startsWith("http://"))return;c=(HttpURLConnection)new URL(target).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(20000);c.setInstanceFollowRedirects(true);int code=c.getResponseCode();if(code<200||code>=300)return;Bitmap bitmap=BitmapFactory.decodeStream(c.getInputStream());if(bitmap!=null)runOnUiThread(()->{if(image.getParent()!=null)image.setImageBitmap(bitmap);});}catch(Exception ignored){}finally{if(c!=null)c.disconnect();}}).start();
+              private void loadRemoteBitmap(ImageView image,String imageUrl){loadRemoteBitmap(image,imageUrl,"covers");}
+              private void loadRemoteBitmap(ImageView image,String imageUrl,String bucket){
+                  final String target=resolveImageUrl(imageUrl,bucket);if(target.isEmpty())return;
+                  new Thread(()->{HttpURLConnection c=null;try{c=(HttpURLConnection)new URL(target).openConnection();c.setConnectTimeout(15000);c.setReadTimeout(25000);c.setInstanceFollowRedirects(true);c.setRequestProperty("Accept","image/*");int code=c.getResponseCode();if(code<200||code>=300)return;try(java.io.InputStream in=c.getInputStream()){Bitmap bitmap=BitmapFactory.decodeStream(in);if(bitmap!=null)runOnUiThread(()->{if(image.getParent()!=null)image.setImageBitmap(bitmap);});}}catch(Exception ex){Log.w("NileSoniQ","Image could not be loaded: "+target,ex);}finally{if(c!=null)c.disconnect();}}).start();
               }
 
               private void createArtistPostScreen() {
@@ -884,7 +909,7 @@ jobs:
                               TextView stats=label("Loading views and subscribers…",11,muted,false);row.addView(stats);
                               final String artistId=a.optString("id","");
                               new Thread(()->{String raw=getApiText("/api/artist/public-stats?artist_id="+urlEncode(artistId));JSONObject values=null;try{values=new JSONObject(raw);}catch(Exception ignored){}final JSONObject result=values;runOnUiThread(()->{if(stats.getParent()!=null){if(result!=null)stats.setText("◉  "+result.optLong("views",0)+" views  ·  ♥  "+result.optLong("monthly_subscribers",0)+" monthly subscribers");else stats.setText("Artist statistics unavailable");}});}).start();
-                              row.setOnClickListener(v->openPublicArtist(a));
+                              row.setOnClickListener(v->openPublicArtist(a));for(int child=0;child<row.getChildCount();child++){View part=row.getChildAt(child);part.setOnClickListener(v->openPublicArtist(a));}
                               LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);discoverArtistResults.addView(row,rp);
                           }
                           discoverArtistOffset=(discoverArtistOffset+1)%Math.max(1,total);
@@ -896,8 +921,8 @@ jobs:
 
               private String artistAvatarUrl(JSONObject artist){
                   if(artist==null)return "";
-                  String[] keys={"avatar_url","profile_picture_url","profile_image_url","photo_url","avatar","picture","image_url","profile_photo","image"};
-                  for(String key:keys){String value=artist.optString(key,"").trim();if(value.startsWith("https://")||value.startsWith("http://"))return value;}
+                  String[] keys={"avatar_url","profile_picture_url","profile_image_url","photo_url","avatar","picture","image_url","profile_photo","image","profile_picture","photo","avatar_path","profile_image","picture_url"};
+                  for(String key:keys){String value=artist.optString(key,"").trim();if(!value.isEmpty()&&!"null".equalsIgnoreCase(value))return resolveImageUrl(value,"avatars");}
                   return "";
               }
 
@@ -908,7 +933,7 @@ jobs:
 
               private void openPublicArtist(JSONObject artistRow) {
                   if(artistRow==null)return;currentPublicArtist=artistRow;
-                  final String artistId=artistRow.optString("id","");
+                  final String artistId=artistRow.optString("id",artistRow.optString("artist_id",""));
                   heading(artistRow.optString("name","Artist"),"Artist profile");
                   String avatar=artistAvatarUrl(artistRow);if(!avatar.isEmpty())addRemoteAvatar(content,avatar,dp(116));else loadPublicArtistAvatarFallback(artistId);
                   String bio=artistRow.optString("bio","");if(!bio.isEmpty())card("About",bio);
@@ -2511,30 +2536,18 @@ jobs:
                       row.setOnClickListener(v -> playSong(song));
 
                       String artworkUrl = song.optString("cover_url",song.optString("cover_image_url",song.optString("artwork_url",song.optString("image_url",song.optString("cover",""))))).trim();
-                      if (artworkUrl.startsWith("https://") || artworkUrl.startsWith("http://")) {
-                          new Thread(() -> {
-                              HttpURLConnection conn = null;
-                              try {
-                                  conn = (HttpURLConnection)new URL(artworkUrl).openConnection();
-                                  conn.setConnectTimeout(6000); conn.setReadTimeout(6000);
-                                  Bitmap bitmap = BitmapFactory.decodeStream(conn.getInputStream());
-                                  if (bitmap != null) runOnUiThread(() -> {
-                                      ImageView image = new ImageView(this);
-                                      image.setImageBitmap(bitmap);
-                                      image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                      coverWrap.removeAllViews();
-                                      coverWrap.addView(image,new FrameLayout.LayoutParams(dp(76),dp(76)));
-                                  });
-                              } catch(Exception ignored) { }
-                              finally { if(conn != null) conn.disconnect(); }
-                          }).start();
+                      if(artworkUrl.isEmpty())artworkUrl=song.optString("cover_path",song.optString("artwork_path",""));
+                      if(!artworkUrl.isEmpty()){
+                          ImageView artwork=new ImageView(this);artwork.setScaleType(ImageView.ScaleType.FIT_CENTER);artwork.setAdjustViewBounds(true);
+                          coverWrap.removeAllViews();coverWrap.addView(artwork,new FrameLayout.LayoutParams(dp(76),dp(76)));
+                          loadRemoteBitmap(artwork,artworkUrl,"covers");
                       }
 
                       LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1,-2);
                       rowParams.bottomMargin = dp(12);
                       songResults.addView(row,rowParams);
                       if("Discover".equals(tab)) {
-                          songResults.getChildAt(songResults.getChildCount()-1).setOnClickListener(v->{JSONObject found=null;String owner=song.optString("artist_id","");for(int ai=0;ai<cachedFeaturedArtists.length();ai++){JSONObject a=cachedFeaturedArtists.optJSONObject(ai);if(a!=null&&(owner.equals(a.optString("user_id"))||owner.equals(a.optString("id")))){found=a;break;}}if(found!=null){openPublicArtist(found);return;}new Thread(()->{String raw=getApiText("/api/db/artists?select=*&eq.id="+urlEncode(owner)+"&limit=1");JSONArray rows=dataArray(raw);if(rows.length()==0)rows=dataArray(getApiText("/api/db/artists?select=*&eq.user_id="+urlEncode(owner)+"&limit=1"));JSONObject a=rows.optJSONObject(0);if(a!=null)runOnUiThread(()->openPublicArtist(a));else runOnUiThread(()->Toast.makeText(this,"Artist profile could not be found.",Toast.LENGTH_SHORT).show());}).start();});
+                          View discoverSongCard=songResults.getChildAt(songResults.getChildCount()-1);View.OnClickListener openSongArtist=v->{JSONObject found=null;String owner=song.optString("artist_id","");for(int ai=0;ai<cachedFeaturedArtists.length();ai++){JSONObject a=cachedFeaturedArtists.optJSONObject(ai);if(a!=null&&(owner.equals(a.optString("user_id"))||owner.equals(a.optString("id")))){found=a;break;}}if(found!=null){openPublicArtist(found);return;}new Thread(()->{String raw=getApiText("/api/db/artists?select=*&eq.id="+urlEncode(owner)+"&limit=1");JSONArray rows=dataArray(raw);if(rows.length()==0)rows=dataArray(getApiText("/api/db/artists?select=*&eq.user_id="+urlEncode(owner)+"&limit=1"));JSONObject a=rows.optJSONObject(0);if(a!=null)runOnUiThread(()->openPublicArtist(a));else runOnUiThread(()->Toast.makeText(this,"Artist profile could not be found.",Toast.LENGTH_SHORT).show());}).start();};discoverSongCard.setOnClickListener(openSongArtist);for(int child=0;child<((ViewGroup)discoverSongCard).getChildCount();child++)((ViewGroup)discoverSongCard).getChildAt(child).setOnClickListener(openSongArtist);
                       }
                       shown++;
                   }
