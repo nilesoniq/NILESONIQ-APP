@@ -285,6 +285,8 @@ jobs:
               private CheckBox uploadRightsCheckbox;
               private Uri selectedAudioUri, selectedCoverUri, selectedAvatarUri;
               private boolean uploadBusy = false;
+              private String currentPackageCode = "free";
+              private int currentWithdrawalMinimum = 10000;
               private static final int PICK_AUDIO = 6101;
               private static final int PICK_COVER = 6102;
               private static final int PICK_AVATAR = 6103;
@@ -1199,11 +1201,28 @@ jobs:
                       }
                       final String resolvedArtistId = artistId;
                       final JSONObject resolvedArtist = artistRows.optJSONObject(0);
-                      String songsRaw = getApiText("/api/db/songs?select=id,title,artist,plays,approved,review_status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
-                      String walletRaw = getApiText("/api/db/artist_wallets?select=balance&eq.user_id="+urlEncode(userId)+"&limit=10");
-                      String payoutsRaw = getApiText("/api/db/artist_payouts?select=id,amount,status,created_at&eq.user_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
-                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&eq.artist_id="+urlEncode(userId)+"&order=created_at.desc&limit=100");
-                      JSONArray songs = dataArray(songsRaw);
+                      // Use the Worker-owned dashboard calculation and ownership filters.
+                      // This keeps package-specific earnings and the correct artist/user IDs in sync.
+                      String dashboardRaw = getApiText("/api/artist/dashboard");
+                      JSONObject dashboardEnvelope = null;
+                      JSONObject dashboardData = null;
+                      JSONObject dashboardStats = null;
+                      try {
+                          dashboardEnvelope = new JSONObject(dashboardRaw);
+                          dashboardData = dashboardEnvelope.optJSONObject("data");
+                          dashboardStats = dashboardData == null ? null : dashboardData.optJSONObject("stats");
+                      } catch (Exception ignored) {}
+                      JSONArray returnedSongs = dashboardData == null ? null : dashboardData.optJSONArray("songs");
+                      final JSONArray songs = returnedSongs == null ? new JSONArray() : returnedSongs;
+                      String walletRaw = getApiText("/api/db/artist_wallets?select=balance&limit=10");
+                      String payoutsRaw = getApiText("/api/db/artist_payouts?select=id,amount,status,created_at&order=created_at.desc&limit=100");
+                      String withdrawalsRaw = getApiText("/api/db/withdrawal_requests?select=id,amount,status,created_at&order=created_at.desc&limit=100");
+                      String packageRaw = getApiText("/api/payments/premium-subscription");
+                      JSONObject packageData = null;
+                      try { packageData = new JSONObject(packageRaw); } catch (Exception ignored) {}
+                      String returnedPackageCode = packageData == null ? "free" : packageData.optString("packageCode", "free").trim().toLowerCase(Locale.US);
+                      final String packageCode = returnedPackageCode.isEmpty() ? "free" : returnedPackageCode;
+                      int withdrawalMinimum = packageCode.equals("star") ? 1000 : packageCode.equals("hit_maker") ? 3000 : packageCode.equals("hustler") ? 5000 : packageCode.equals("premium") ? 7000 : 10000;
                       JSONArray wallets = dataArray(walletRaw);
                       JSONArray payouts = dataArray(payoutsRaw);
                       JSONArray withdrawals = dataArray(withdrawalsRaw);
@@ -1233,24 +1252,22 @@ jobs:
                               approvedPlays += Math.max(0,song.optLong("plays",0));
                           }
                       }
-                      double grossEarnings=approvedPlays*0.5d;
-                      double reservedWithdrawals=0, withdrawn=0;
+                      double grossEarnings=dashboardStats == null ? 0 : Math.max(0,dashboardStats.optDouble("earnings",0));
+                      double balance=dashboardStats == null ? 0 : Math.max(0,dashboardStats.optDouble("availableBalance",0));
+                      double withdrawn=dashboardStats == null ? 0 : Math.max(0,dashboardStats.optDouble("amountWithdrawn",0));
+                      if (dashboardStats != null) {
+                          plays = dashboardStats.optLong("totalPlays",plays);
+                          approvedPlays = dashboardStats.optLong("approvedPlays",approvedPlays);
+                      }
                       int pendingWithdrawals=0;
                       for(int i=0;i<withdrawals.length();i++) {
                           JSONObject w=withdrawals.optJSONObject(i); if(w==null) continue;
                           String st=w.optString("status","").toLowerCase(Locale.US);
-                          double amount=Math.max(0,w.optDouble("amount",0));
-                          if(st.equals("pending")||st.equals("processing")) {
-                              pendingWithdrawals++;
-                              reservedWithdrawals += amount;
-                          } else if(st.equals("completed")||st.equals("success")||st.equals("successful")||st.equals("paid")) {
-                              withdrawn += amount;
-                              reservedWithdrawals += amount;
-                          }
+                          if(st.equals("pending")||st.equals("processing")) pendingWithdrawals++;
                       }
-                      double balance=Math.max(0,grossEarnings-reservedWithdrawals);
+                      final String packageLabel=packageCode.replace('_',' ');
                       final String songSummary="Songs: "+songs.length()+"\nApproved: "+approved+"\nPending review: "+pending+"\nRejected: "+rejected+"\nRecorded plays: "+plays+"\nApproved-song plays used for earnings: "+approvedPlays;
-                      final String earnings="Gross earnings (UGX 0.5 per approved play): UGX "+money(grossEarnings)+"\nAvailable balance: UGX "+money(balance)+"\nAmount recorded as paid: UGX "+money(withdrawn)+"\nPending withdrawal requests: "+pendingWithdrawals+"\nMinimum withdrawal: UGX 10,000";
+                      final String earnings="Package: "+packageLabel+"\nEstimated artist net earnings: UGX "+money(grossEarnings)+"\nAvailable balance: UGX "+money(balance)+"\nAmount recorded as paid: UGX "+money(withdrawn)+"\nPending withdrawal requests: "+pendingWithdrawals+"\nMinimum withdrawal: UGX "+money(withdrawalMinimum);
                       final String songList=list.length()==0?"No song records were returned for this account.":list.toString();
                       final double finalBalance = balance;
                       final double finalWithdrawn = withdrawn;
@@ -1272,6 +1289,8 @@ jobs:
                               } catch (Exception ignored) {}
                           }
                           content.removeAllViews();
+                          currentPackageCode = packageCode;
+                          currentWithdrawalMinimum = withdrawalMinimum;
                           heading("Artist Dashboard","Your songs, performance and earnings");
                           String shownArtistName = resolvedArtist == null ? artistName : resolvedArtist.optString("name", artistName);
                           addArtistProfile(shownArtistName.isEmpty()?email:shownArtistName, email);
@@ -1434,9 +1453,10 @@ jobs:
                           LinearLayout.LayoutParams recentParams = new LinearLayout.LayoutParams(-1,-2);
                           recentParams.bottomMargin = dp(14);
                           content.addView(recentPanel,recentParams);
+                          card("Artist package",packageLabel.toUpperCase(Locale.US)+"\nYour active package and expiry are controlled by the NileSoniQ payment backend.");
                           card("Song submissions",songSummary);
                           card("Earnings & withdrawals",earnings);
-                          if(artistRaw.startsWith("ERROR") || songsRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR")) {
+                          if(artistRaw.startsWith("ERROR") || dashboardRaw.startsWith("ERROR") || walletRaw.startsWith("ERROR") || payoutsRaw.startsWith("ERROR") || withdrawalsRaw.startsWith("ERROR") || packageRaw.startsWith("ERROR")) {
                               card("Data access note","Some records could not be loaded. Check the API permissions and actual table fields before relying on the figures. No withdrawal was submitted or changed.");
                           }
                           action("▣  Withdraw",this::withdrawalScreen);
@@ -1450,39 +1470,54 @@ jobs:
               private void withdrawalScreen() {
                   if (signedInUser == null) { screen("Profile"); return; }
                   content.removeAllViews();
-                  heading("Request a withdrawal", "Requests are checked by the NileSoniQ backend. Minimum amount: UGX 10,000.");
-                  EditText amountInput = field("Amount in UGX (minimum 10000)", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-                  EditText methodInput = field("Payment method (e.g. MTN Mobile Money)", InputType.TYPE_CLASS_TEXT);
-                  EditText detailsInput = field("Payment details / registered phone number", InputType.TYPE_CLASS_TEXT);
-                  card("Important", "Only your available approved-song earnings can be requested. A successful submission creates a pending request; it does not mean payment has already been sent.");
-                  action("Submit withdrawal request", () -> {
-                      String amountText=amountInput.getText().toString().trim();
-                      String method=methodInput.getText().toString().trim();
-                      String details=detailsInput.getText().toString().trim();
-                      double amount;
-                      try { amount=Double.parseDouble(amountText); } catch(Exception e) { amount=0; }
-                      if(!Double.isFinite(amount) || amount<10000 || method.isEmpty() || details.isEmpty()) {
-                          Toast.makeText(this,"Enter at least UGX 10,000, a payment method and payment details.",Toast.LENGTH_LONG).show();
-                          return;
-                      }
-                      JSONObject payload=new JSONObject();
-                      try { payload.put("amount",amount); payload.put("payment_method",method); payload.put("payment_details",details); }
-                      catch(Exception ignored) {}
-                      actionBusyToast("Submitting withdrawal request…");
-                      new Thread(() -> {
-                          ApiResult result=request("POST","/api/db/withdrawal_requests",payload);
-                          boolean ok=result.code>=200 && result.code<300 && result.body!=null && (!result.body.has("error") || result.body.isNull("error"));
-                          String message=ok ? "Withdrawal request submitted. Status: pending." : (result.body==null ? "Withdrawal request failed (HTTP "+result.code+")." : result.body.optString("error","Withdrawal request failed."));
-                          runOnUiThread(() -> {
-                              if(isFinishing()) return;
-                              content.removeAllViews();
-                              heading(ok?"Request submitted":"Request not submitted", "Backend response");
-                              card(ok?"Pending withdrawal": "Unable to submit", message);
-                              action("Back to Artist Dashboard",this::artistDashboard);
+                  heading("Request a withdrawal", "Checking your active package and minimum withdrawal…");
+                  new Thread(() -> {
+                      String raw = getApiText("/api/payments/premium-subscription");
+                      String code = "free";
+                      try { code = new JSONObject(raw).optString("packageCode", "free").trim().toLowerCase(Locale.US); } catch (Exception ignored) {}
+                      if (code.isEmpty()) code = "free";
+                      final String packageCode = code;
+                      final int minimum = packageCode.equals("star") ? 1000 : packageCode.equals("hit_maker") ? 3000 : packageCode.equals("hustler") ? 5000 : packageCode.equals("premium") ? 7000 : 10000;
+                      runOnUiThread(() -> {
+                          if (isFinishing() || signedInUser == null) return;
+                          currentPackageCode = packageCode;
+                          currentWithdrawalMinimum = minimum;
+                          content.removeAllViews();
+                          heading("Request a withdrawal", "Your "+packageCode.replace('_',' ')+" package minimum is UGX "+money(minimum)+".");
+                          EditText amountInput = field("Amount in UGX (minimum "+minimum+")", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                          EditText methodInput = field("Payment method (e.g. MTN Mobile Money)", InputType.TYPE_CLASS_TEXT);
+                          EditText detailsInput = field("Payment details / registered phone number", InputType.TYPE_CLASS_TEXT);
+                          card("Important", "Only available approved-song earnings can be requested. The NileSoniQ backend checks your package, balance and minimum again before accepting the request.");
+                          action("Submit withdrawal request", () -> {
+                              String amountText=amountInput.getText().toString().trim();
+                              String method=methodInput.getText().toString().trim();
+                              String details=detailsInput.getText().toString().trim();
+                              double amount;
+                              try { amount=Double.parseDouble(amountText); } catch(Exception e) { amount=0; }
+                              if(!Double.isFinite(amount) || amount<minimum || amount!=Math.floor(amount) || method.isEmpty() || details.isEmpty()) {
+                                  Toast.makeText(this,"Enter a whole UGX amount of at least "+minimum+", a payment method and payment details.",Toast.LENGTH_LONG).show();
+                                  return;
+                              }
+                              JSONObject payload=new JSONObject();
+                              try { payload.put("amount",(long)amount); payload.put("payment_method",method); payload.put("payment_details",details); }
+                              catch(Exception ignored) {}
+                              actionBusyToast("Submitting withdrawal request…");
+                              new Thread(() -> {
+                                  ApiResult result=request("POST","/api/db/withdrawal_requests",payload);
+                                  boolean ok=result.code>=200 && result.code<300 && result.body!=null && (!result.body.has("error") || result.body.isNull("error"));
+                                  String message=ok ? "Withdrawal request submitted. Status: pending." : (result.body==null ? "Withdrawal request failed (HTTP "+result.code+")." : result.body.optString("error","Withdrawal request failed."));
+                                  runOnUiThread(() -> {
+                                      if(isFinishing()) return;
+                                      content.removeAllViews();
+                                      heading(ok?"Request submitted":"Request not submitted", "Backend response");
+                                      card(ok?"Pending withdrawal": "Unable to submit", message);
+                                      action("Back to Artist Dashboard",this::artistDashboard);
+                                  });
+                              }).start();
                           });
-                      }).start();
-                  });
-                  action("Back to Artist Dashboard",this::artistDashboard);
+                          action("Back to Artist Dashboard",this::artistDashboard);
+                      });
+                  }).start();
               }
 
               private void actionBusyToast(String message) {
@@ -1694,47 +1729,88 @@ jobs:
                   return name.isEmpty() ? fallback : name;
               }
 
+              private long getUriSize(Uri uri) throws Exception {
+                  if (uri == null) return 0L;
+                  try (android.content.res.AssetFileDescriptor descriptor = getContentResolver().openAssetFileDescriptor(uri, "r")) {
+                      if (descriptor != null && descriptor.getLength() > 0) return descriptor.getLength();
+                  } catch (Exception ignored) {}
+                  Cursor cursor = null;
+                  try {
+                      cursor = getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.SIZE}, null, null, null);
+                      if (cursor != null && cursor.moveToFirst()) {
+                          int column = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                          if (column >= 0 && !cursor.isNull(column)) {
+                              long size = cursor.getLong(column);
+                              if (size > 0) return size;
+                          }
+                      }
+                  } finally { if (cursor != null) cursor.close(); }
+                  throw new Exception("The selected file size could not be verified. Choose a file stored on your device.");
+              }
+
               private String uploadObject(Uri uri, String bucket, String userId, String fallback) throws Exception {
                   if (uri == null) return "";
                   String name = safeFileName(getDisplayName(uri),fallback);
                   String objectPath = userId + "/" + System.currentTimeMillis() + "_" + name;
-                  java.net.URL url = new URL(API + "/api/storage/upload?bucket=" + bucket + "&path=" + urlEncode(objectPath));
-                  HttpURLConnection c = (HttpURLConnection)url.openConnection();
-                  try {
-                      c.setRequestMethod("POST");
-                      c.setConnectTimeout(20000);
-                      c.setReadTimeout(120000);
-                      c.setDoOutput(true);
-                      c.setRequestProperty("Accept","application/json");
-                      c.setRequestProperty("Content-Type",getContentResolver().getType(uri) == null ? "application/octet-stream" : getContentResolver().getType(uri));
-                      String cookie = getCookie();
-                      if (!cookie.isEmpty()) c.setRequestProperty("Cookie",cookie);
-                      try (java.io.InputStream in = getContentResolver().openInputStream(uri); OutputStream out = c.getOutputStream()) {
-                          if (in == null) throw new Exception("Could not read selected file.");
-                          byte[] buffer = new byte[32768];
-                          int n;
-                          long total = 0;
-                          while ((n = in.read(buffer)) != -1) {
-                              total += n;
-                              if (total > 150L * 1024L * 1024L) throw new Exception("File is larger than 150 MB. Please choose a smaller file.");
-                              out.write(buffer,0,n);
+                  String mime = getContentResolver().getType(uri);
+                  if (mime == null || mime.trim().isEmpty()) mime = "application/octet-stream";
+                  long fileSize = getUriSize(uri);
+                  int attempt = 0;
+                  while (true) {
+                      HttpURLConnection c = null;
+                      try {
+                          java.net.URL url = new URL(API + "/api/storage/upload?bucket=" + bucket + "&path=" + urlEncode(objectPath));
+                          c = (HttpURLConnection)url.openConnection();
+                          c.setRequestMethod("POST");
+                          c.setConnectTimeout(30000);
+                          c.setReadTimeout(180000);
+                          c.setDoOutput(true);
+                          c.setFixedLengthStreamingMode(fileSize);
+                          c.setRequestProperty("Accept","application/json");
+                          c.setRequestProperty("Content-Type",mime);
+                          String cookie = getCookie();
+                          if (!cookie.isEmpty()) c.setRequestProperty("Cookie",cookie);
+                          try (java.io.InputStream in = getContentResolver().openInputStream(uri); OutputStream out = c.getOutputStream()) {
+                              if (in == null) throw new java.io.IOException("Could not read selected file.");
+                              byte[] buffer = new byte[32768];
+                              int n;
+                              long total = 0;
+                              while ((n = in.read(buffer)) != -1) {
+                                  total += n;
+                                  if (total > 50L * 1024L * 1024L && bucket.equals("audio")) throw new Exception("Audio file exceeds the 50 MB limit.");
+                                  if (total > 5L * 1024L * 1024L && !bucket.equals("audio")) throw new Exception("Image file exceeds the 5 MB limit.");
+                                  out.write(buffer,0,n);
+                              }
                           }
-                      }
-                      int code = c.getResponseCode();
-                      java.io.InputStream stream = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
-                      StringBuilder response = new StringBuilder();
-                      if (stream != null) {
-                          BufferedReader reader = new BufferedReader(new InputStreamReader(stream,"UTF-8"));
-                          String line; while ((line = reader.readLine()) != null) response.append(line);
-                          reader.close();
-                      }
-                      if (code < 200 || code >= 300) {
+                          int code = c.getResponseCode();
+                          java.io.InputStream stream = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+                          StringBuilder response = new StringBuilder();
+                          if (stream != null) {
+                              BufferedReader reader = new BufferedReader(new InputStreamReader(stream,"UTF-8"));
+                              String line; while ((line = reader.readLine()) != null) response.append(line);
+                              reader.close();
+                          }
+                          if (code >= 200 && code < 300) return API + "/api/storage/public/" + bucket + "/" + objectPath;
                           JSONObject err;
                           try { err = new JSONObject(response.toString()); } catch (Exception e) { err = new JSONObject(); }
-                          throw new Exception(err.optString("error","File upload failed (HTTP " + code + ")."));
+                          String message = err.optString("error","File upload failed (HTTP " + code + ").");
+                          if (code >= 400 && code < 500) throw new Exception(message);
+                          attempt++;
+                          final int retryAttempt = attempt;
+                          if (retryAttempt == 1) runOnUiThread(() -> Toast.makeText(this,"Network is weak. Upload will keep retrying automatically…",Toast.LENGTH_LONG).show());
+                      } catch (java.io.IOException networkError) {
+                          attempt++;
+                          final int retryAttempt = attempt;
+                          if (retryAttempt == 1) runOnUiThread(() -> Toast.makeText(this,"Network is weak. Upload will keep retrying automatically…",Toast.LENGTH_LONG).show());
+                      } finally {
+                          if (c != null) c.disconnect();
                       }
-                      return API + "/api/storage/public/" + bucket + "/" + objectPath;
-                  } finally { c.disconnect(); }
+                      try { Thread.sleep(3000); }
+                      catch (InterruptedException interrupted) {
+                          Thread.currentThread().interrupt();
+                          throw new Exception("Upload retry was interrupted. Please try again.");
+                      }
+                  }
               }
 
               private void submitSongUpload() {
@@ -1762,6 +1838,16 @@ jobs:
                       try {
                           String userId = signedInUser.optString("id",signedInUser.optString("user_id",""));
                           if (userId.isEmpty()) throw new Exception("Your account ID could not be found. Please sign in again.");
+                          long audioSize = getUriSize(selectedAudioUri);
+                          long coverSize = selectedCoverUri == null ? 1L : getUriSize(selectedCoverUri);
+                          JSONObject preflight = new JSONObject();
+                          preflight.put("audio_size",audioSize);
+                          preflight.put("cover_size",coverSize);
+                          ApiResult eligibility = request("POST","/api/uploads/check",preflight);
+                          if (eligibility.code < 200 || eligibility.code >= 300 || eligibility.body == null || !eligibility.body.optBoolean("allowed")) {
+                              String reason = eligibility.body == null ? "Could not verify your package upload allowance. No files were uploaded." : eligibility.body.optString("error","Your package does not currently allow another upload.");
+                              throw new Exception(reason);
+                          }
                           String audioUrl = uploadObject(selectedAudioUri,"audio",userId,"song_audio");
                           String coverUrl = selectedCoverUri == null ? "" : uploadObject(selectedCoverUri,"covers",userId,"song_cover");
                           JSONObject row = new JSONObject();
