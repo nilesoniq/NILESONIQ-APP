@@ -212,6 +212,8 @@ jobs:
 
           import android.app.Activity;
           import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
           import android.graphics.Color;
           import android.graphics.Bitmap;
           import android.graphics.BitmapFactory;
@@ -289,6 +291,9 @@ jobs:
               private JSONObject currentPublicArtist;
               private LinearLayout discoverArtistResults;
               private JSONArray cachedFeaturedArtists = new JSONArray();
+              private final Handler discoverArtistHandler = new Handler(Looper.getMainLooper());
+              private int discoverArtistOffset = 0;
+              private Runnable discoverArtistRotator;
               private boolean uploadBusy = false;
               private String currentPackageCode = "free";
               private int currentWithdrawalMinimum = 10000;
@@ -405,6 +410,7 @@ jobs:
               }
 
               private void screenUnsafe(String name) {
+                  if(!"Discover".equals(name)&&discoverArtistRotator!=null){discoverArtistHandler.removeCallbacks(discoverArtistRotator);discoverArtistRotator=null;}
                   // Invalidate outstanding song requests whenever a screen is rebuilt.
                   // This prevents older network responses from writing into a new screen.
                   songRequestId++;
@@ -751,13 +757,63 @@ jobs:
               private void deleteArtistPost(String id){new Thread(()->{try{ApiResult r=request("DELETE","/api/artist/posts?id="+urlEncode(id),null);if(r.code<200||r.code>=300)throw new Exception(r.body==null?"Could not delete post.":r.body.optString("error","Could not delete post."));runOnUiThread(()->{Toast.makeText(this,"Post deleted.",Toast.LENGTH_SHORT).show();myArtistPosts();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}}).start();}
 
               private void openPostDiscussion(JSONObject post){
-                  String postId=post.optString("id","");heading("Post discussion",post.optString("artist_name","Artist"));
-                  action("Back to Community",this::community);
-                  LinearLayout panel=column();content.addView(panel);panel.addView(label("Loading comments…",13,muted,false));
-                  EditText comment=field("Write a comment…",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);comment.setSingleLine(false);comment.setMinLines(2);
-                  Button send=new Button(this);send.setText("Send comment");send.setAllCaps(false);
-                  send.setOnClickListener(v->{if(signedInUser==null){screen("Profile");return;}String value=comment.getText().toString().trim();if(value.isEmpty())return;send.setEnabled(false);new Thread(()->{try{JSONObject body=new JSONObject();body.put("action","comment");body.put("comment",value);ApiResult r=request("POST","/api/artist/post-interactions?post_id="+urlEncode(postId),body);if(r.code<200||r.code>=300)throw new Exception(r.body==null?"Comment failed.":r.body.optString("error","Comment failed."));runOnUiThread(()->openPostDiscussion(post));}catch(Exception e){runOnUiThread(()->{send.setEnabled(true);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}}).start();});
-                  new Thread(()->{String raw=getApiText("/api/artist/post-interactions?post_id="+urlEncode(postId));JSONObject result=null;try{result=new JSONObject(raw);}catch(Exception ignored){}final JSONObject values=result;runOnUiThread(()->{if(values==null){panel.removeAllViews();panel.addView(label("Could not load this discussion. Please try again.",13,muted,false));return;}panel.removeAllViews();int count=values.optInt("reaction_count",0);Button react=new Button(this);react.setText((values.optBoolean("reacted")?"♥":"♡")+"  "+count+" reactions");react.setAllCaps(false);react.setOnClickListener(v->{if(signedInUser==null){screen("Profile");return;}new Thread(()->{try{JSONObject body=new JSONObject();body.put("action","react");ApiResult r=request("POST","/api/artist/post-interactions?post_id="+urlEncode(postId),body);if(r.code<200||r.code>=300)throw new Exception("Could not react to post.");runOnUiThread(()->openPostDiscussion(post));}catch(Exception e){runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}}).start();});panel.addView(react);JSONArray comments=values.optJSONArray("comments");if(comments==null||comments.length()==0)panel.addView(label("No comments yet. Start the conversation.",13,muted,false));else for(int i=0;i<comments.length();i++){JSONObject c=comments.optJSONObject(i);if(c!=null){LinearLayout bubble=column();bubble.setPadding(dp(10),dp(9),dp(10),dp(9));bubble.setBackground(rounded(Color.WHITE,12,border));bubble.addView(label(c.optString("author_name","Listener"),12,orange,true));bubble.addView(label(c.optString("comment",""),13,white,false));panel.addView(bubble);}}panel.addView(comment);panel.addView(send);});}).start();
+                  try {
+                      if(post==null){Toast.makeText(this,"This post is unavailable. Refresh Community and try again.",Toast.LENGTH_LONG).show();return;}
+                      final String postId=post.optString("id","").trim();
+                      if(postId.isEmpty()){Toast.makeText(this,"This post has no valid ID. Refresh Community and try again.",Toast.LENGTH_LONG).show();return;}
+                      heading("Post discussion",post.optString("artist_name","Artist"));
+                      action("Back to Community",this::community);
+                      LinearLayout panel=column();content.addView(panel);
+                      panel.addView(label("Loading comments…",13,muted,false));
+                      new Thread(()->{
+                          String raw=getApiText("/api/artist/post-interactions?post_id="+urlEncode(postId));
+                          JSONObject result=null;
+                          try { if(raw!=null&&!raw.startsWith("ERROR")) result=new JSONObject(raw); } catch(Exception ignored){}
+                          final JSONObject values=result;
+                          runOnUiThread(()->{
+                              try {
+                                  if(isFinishing()||panel.getParent()==null)return;
+                                  panel.removeAllViews();
+                                  if(values==null){panel.addView(label("Comments could not be loaded. Please check your connection and try again.",13,muted,false));action("Retry comments",()->openPostDiscussion(post));return;}
+                                  Button react=new Button(this);
+                                  react.setText((values.optBoolean("reacted")?"♥":"♡")+"  "+values.optInt("reaction_count",0)+" reactions");
+                                  react.setAllCaps(false);
+                                  react.setOnClickListener(v->{
+                                      if(signedInUser==null){screen("Profile");return;}
+                                      react.setEnabled(false);
+                                      new Thread(()->{try{JSONObject body=new JSONObject();body.put("action","react");ApiResult r=request("POST","/api/artist/post-interactions?post_id="+urlEncode(postId),body);if(r.code<200||r.code>=300)throw new Exception(r.body==null?"Could not react to post.":r.body.optString("error","Could not react to post."));runOnUiThread(()->openPostDiscussion(post));}catch(Exception e){runOnUiThread(()->{react.setEnabled(true);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}}).start();
+                                  });
+                                  panel.addView(react);
+                                  JSONArray comments=values.optJSONArray("comments");
+                                  if(comments==null||comments.length()==0)panel.addView(label("No comments yet. Start the conversation.",13,muted,false));
+                                  else for(int i=0;i<comments.length();i++){
+                                      JSONObject c=comments.optJSONObject(i);if(c==null)continue;
+                                      LinearLayout bubble=column();bubble.setPadding(dp(10),dp(9),dp(10),dp(9));bubble.setBackground(rounded(Color.WHITE,12,border));
+                                      bubble.addView(label(c.optString("author_name","Listener"),12,orange,true));
+                                      bubble.addView(label(c.optString("comment",""),13,white,false));
+                                      LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,-2);bp.bottomMargin=dp(7);panel.addView(bubble,bp);
+                                  }
+                                  EditText comment=field("Write a comment…",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+                                  comment.setSingleLine(false);comment.setMinLines(2);comment.setMaxLines(5);
+                                  panel.addView(comment,new LinearLayout.LayoutParams(-1,-2));
+                                  Button send=new Button(this);send.setText("Send comment");send.setAllCaps(false);panel.addView(send,new LinearLayout.LayoutParams(-1,dp(46)));
+                                  send.setOnClickListener(v->{
+                                      if(signedInUser==null){screen("Profile");return;}
+                                      String value=comment.getText()==null?"":comment.getText().toString().trim();
+                                      if(value.isEmpty()){Toast.makeText(this,"Write a comment first.",Toast.LENGTH_SHORT).show();return;}
+                                      send.setEnabled(false);
+                                      new Thread(()->{try{JSONObject body=new JSONObject();body.put("action","comment");body.put("comment",value);ApiResult r=request("POST","/api/artist/post-interactions?post_id="+urlEncode(postId),body);if(r.code<200||r.code>=300)throw new Exception(r.body==null?"Comment failed.":r.body.optString("error","Comment failed."));runOnUiThread(()->{Toast.makeText(this,"Comment posted.",Toast.LENGTH_SHORT).show();openPostDiscussion(post);});}catch(Exception e){runOnUiThread(()->{send.setEnabled(true);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}}).start();
+                                  });
+                              } catch(Throwable uiError) {
+                                  Log.e("NileSoniQ","Could not display post discussion",uiError);
+                                  try{panel.removeAllViews();panel.addView(label("The discussion could not be displayed. Your post is safe. Please try again.",13,muted,false));}catch(Throwable ignored){}
+                              }
+                          });
+                      }).start();
+                  } catch(Throwable error) {
+                      Log.e("NileSoniQ","Could not open post discussion",error);
+                      Toast.makeText(this,"Could not open comments. Please try again.",Toast.LENGTH_LONG).show();
+                  }
               }
 
               private void addRemoteAvatar(LinearLayout parent,String imageUrl,int size){
@@ -805,26 +861,56 @@ jobs:
               }
 
               private void loadDiscoverArtists(JSONArray artists) {
-                  if(discoverArtistResults==null)return;discoverArtistResults.removeAllViews();
-                  if(artists==null||artists.length()==0){discoverArtistResults.addView(label("No upgraded artist profiles are featured right now.",13,muted,false));return;}
-                  for(int i=0;i<artists.length();i++){
-                      JSONObject a=artists.optJSONObject(i);if(a==null)continue;
-                      LinearLayout row=column();row.setGravity(Gravity.CENTER);row.setPadding(dp(14),dp(14),dp(14),dp(14));row.setBackground(rounded(Color.WHITE,18,border));
-                      String avatar=a.optString("avatar_url",a.optString("profile_picture_url",a.optString("profile_image_url",a.optString("photo_url",""))));if(!avatar.isEmpty())addRemoteAvatar(row,avatar,dp(88));else{TextView initials=label("♫",28,orange,true);initials.setGravity(Gravity.CENTER);initials.setBackground(circleDrawable(Color.rgb(255,235,220)));row.addView(initials,new LinearLayout.LayoutParams(dp(88),dp(88)));}
-                      TextView name=label(a.optString("name","Artist"),16,white,true);name.setGravity(Gravity.CENTER);row.addView(name);
-                      row.addView(label(a.optString("package_name","upgraded").replace('_',' ').toUpperCase(Locale.US)+" ARTIST",10,orange,true));
-                      TextView stats=label("Loading views and subscribers…",11,muted,false);row.addView(stats);
-                      final String artistId=a.optString("id","");new Thread(()->{String raw=getApiText("/api/artist/public-stats?artist_id="+urlEncode(artistId));JSONObject values=null;try{values=new JSONObject(raw);}catch(Exception ignored){}final JSONObject result=values;runOnUiThread(()->{if(result!=null)stats.setText("◉  "+result.optLong("views",0)+" views  ·  ♥  "+result.optLong("monthly_subscribers",0)+" monthly subscribers");else stats.setText("Artist statistics unavailable");});}).start();
-                      Button view=new Button(this);view.setText("View Artist Profile");view.setAllCaps(false);view.setOnClickListener(v->openPublicArtist(a));row.addView(view);row.setOnClickListener(v->openPublicArtist(a));
-                      LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);discoverArtistResults.addView(row,rp);
-                  }
+                  if(discoverArtistResults==null)return;
+                  if(discoverArtistRotator!=null)discoverArtistHandler.removeCallbacks(discoverArtistRotator);
+                  discoverArtistResults.removeAllViews();
+                  cachedFeaturedArtists=artists==null?new JSONArray():artists;
+                  if(cachedFeaturedArtists.length()==0){discoverArtistResults.addView(label("No upgraded artist profiles are featured right now.",13,muted,false));return;}
+                  discoverArtistOffset=0;
+                  Runnable renderPair=new Runnable(){
+                      @Override public void run(){
+                          if(discoverArtistResults==null||!"Discover".equals(tab)||cachedFeaturedArtists.length()==0)return;
+                          discoverArtistResults.removeAllViews();
+                          int total=cachedFeaturedArtists.length();
+                          for(int n=0;n<2&&n<total;n++){
+                              int index=(discoverArtistOffset+n)%total;
+                              JSONObject a=cachedFeaturedArtists.optJSONObject(index);if(a==null)continue;
+                              LinearLayout row=column();row.setGravity(Gravity.CENTER);row.setPadding(dp(13),dp(12),dp(13),dp(12));row.setBackground(rounded(Color.WHITE,18,border));row.setClickable(true);row.setFocusable(true);
+                              String avatar=artistAvatarUrl(a);
+                              if(!avatar.isEmpty())addRemoteAvatar(row,avatar,dp(82));
+                              else {TextView initials=label("♫",27,orange,true);initials.setGravity(Gravity.CENTER);initials.setBackground(circleDrawable(Color.rgb(255,235,220)));row.addView(initials,new LinearLayout.LayoutParams(dp(82),dp(82)));loadArtistAvatarFallback(a,initials,row);}
+                              TextView name=label(a.optString("name","Artist"),16,white,true);name.setGravity(Gravity.CENTER);row.addView(name);
+                              row.addView(label(a.optString("package_name","upgraded").replace('_',' ').toUpperCase(Locale.US)+" ARTIST",10,orange,true));
+                              TextView stats=label("Loading views and subscribers…",11,muted,false);row.addView(stats);
+                              final String artistId=a.optString("id","");
+                              new Thread(()->{String raw=getApiText("/api/artist/public-stats?artist_id="+urlEncode(artistId));JSONObject values=null;try{values=new JSONObject(raw);}catch(Exception ignored){}final JSONObject result=values;runOnUiThread(()->{if(stats.getParent()!=null){if(result!=null)stats.setText("◉  "+result.optLong("views",0)+" views  ·  ♥  "+result.optLong("monthly_subscribers",0)+" monthly subscribers");else stats.setText("Artist statistics unavailable");}});}).start();
+                              row.setOnClickListener(v->openPublicArtist(a));
+                              LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);discoverArtistResults.addView(row,rp);
+                          }
+                          discoverArtistOffset=(discoverArtistOffset+1)%Math.max(1,total);
+                          discoverArtistRotator=this;discoverArtistHandler.postDelayed(this,4500);
+                      }
+                  };
+                  discoverArtistRotator=renderPair;renderPair.run();
+              }
+
+              private String artistAvatarUrl(JSONObject artist){
+                  if(artist==null)return "";
+                  String[] keys={"avatar_url","profile_picture_url","profile_image_url","photo_url","avatar","picture","image_url","profile_photo","image"};
+                  for(String key:keys){String value=artist.optString(key,"").trim();if(value.startsWith("https://")||value.startsWith("http://"))return value;}
+                  return "";
+              }
+
+              private void loadArtistAvatarFallback(JSONObject artist,TextView placeholder,LinearLayout parent){
+                  String id=artist==null?"":artist.optString("id","");if(id.isEmpty())return;
+                  new Thread(()->{JSONArray rows=dataArray(getApiText("/api/db/artists?select=*&eq.id="+urlEncode(id)+"&limit=1"));JSONObject full=rows.optJSONObject(0);String url=artistAvatarUrl(full);if(url.isEmpty())return;runOnUiThread(()->{if(parent.getParent()!=null){parent.removeView(placeholder);addRemoteAvatar(parent,url,dp(82));}});}).start();
               }
 
               private void openPublicArtist(JSONObject artistRow) {
                   if(artistRow==null)return;currentPublicArtist=artistRow;
                   final String artistId=artistRow.optString("id","");
                   heading(artistRow.optString("name","Artist"),"Artist profile");
-                  String avatar=artistRow.optString("avatar_url","");if(!avatar.isEmpty())addRemoteAvatar(content,avatar,dp(116));
+                  String avatar=artistAvatarUrl(artistRow);if(!avatar.isEmpty())addRemoteAvatar(content,avatar,dp(116));else loadPublicArtistAvatarFallback(artistId);
                   String bio=artistRow.optString("bio","");if(!bio.isEmpty())card("About",bio);
                   card("Artist package",artistRow.optString("package_name","upgraded").replace('_',' ')+" · Active");
                   final TextView stats=label("Loading profile views and monthly subscribers…",12,muted,false);content.addView(stats);
@@ -832,6 +918,11 @@ jobs:
                   action("Follow / Unfollow",()->toggleArtistFollow(artistId));
                   action("Subscribe to this artist · UGX 5,000 / 30 days",()->listenerSubscribeScreen(artistId,artistRow.optString("name","Artist")));
                   action("Back to Discover",()->screen("Discover"));
+              }
+
+              private void loadPublicArtistAvatarFallback(String artistId){
+                  if(artistId==null||artistId.isEmpty())return;
+                  new Thread(()->{JSONArray rows=dataArray(getApiText("/api/db/artists?select=*&eq.id="+urlEncode(artistId)+"&limit=1"));JSONObject full=rows.optJSONObject(0);String url=artistAvatarUrl(full);if(url.isEmpty())return;runOnUiThread(()->{if(content!=null&&"Discover".equals(tab))addRemoteAvatar(content,url,dp(116));});}).start();
               }
 
               private void toggleArtistFollow(String artistId) {
@@ -2443,10 +2534,7 @@ jobs:
                       rowParams.bottomMargin = dp(12);
                       songResults.addView(row,rowParams);
                       if("Discover".equals(tab)) {
-                          Button artistProfileButton=new Button(this);
-                          artistProfileButton.setText("View Artist Profile");artistProfileButton.setAllCaps(false);
-                          artistProfileButton.setOnClickListener(v->{JSONObject found=null;String owner=song.optString("artist_id","");for(int ai=0;ai<cachedFeaturedArtists.length();ai++){JSONObject a=cachedFeaturedArtists.optJSONObject(ai);if(a!=null&&(owner.equals(a.optString("user_id"))||owner.equals(a.optString("id")))){found=a;break;}}if(found!=null)openPublicArtist(found);else new Thread(()->{String raw=getApiText("/api/db/artists?select=id,user_id,name,bio,location,avatar_url&eq.id="+urlEncode(owner)+"&limit=1");JSONArray rows=dataArray(raw);if(rows.length()==0)rows=dataArray(getApiText("/api/db/artists?select=id,user_id,name,bio,location,avatar_url&eq.user_id="+urlEncode(owner)+"&limit=1"));JSONObject a=rows.optJSONObject(0);if(a!=null)runOnUiThread(()->openPublicArtist(a));else runOnUiThread(()->Toast.makeText(this,"Artist profile could not be found.",Toast.LENGTH_SHORT).show());}).start();});
-                          LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(40));ap.bottomMargin=dp(10);songResults.addView(artistProfileButton,ap);
+                          songResults.getChildAt(songResults.getChildCount()-1).setOnClickListener(v->{JSONObject found=null;String owner=song.optString("artist_id","");for(int ai=0;ai<cachedFeaturedArtists.length();ai++){JSONObject a=cachedFeaturedArtists.optJSONObject(ai);if(a!=null&&(owner.equals(a.optString("user_id"))||owner.equals(a.optString("id")))){found=a;break;}}if(found!=null){openPublicArtist(found);return;}new Thread(()->{String raw=getApiText("/api/db/artists?select=*&eq.id="+urlEncode(owner)+"&limit=1");JSONArray rows=dataArray(raw);if(rows.length()==0)rows=dataArray(getApiText("/api/db/artists?select=*&eq.user_id="+urlEncode(owner)+"&limit=1"));JSONObject a=rows.optJSONObject(0);if(a!=null)runOnUiThread(()->openPublicArtist(a));else runOnUiThread(()->Toast.makeText(this,"Artist profile could not be found.",Toast.LENGTH_SHORT).show());}).start();});
                       }
                       shown++;
                   }
