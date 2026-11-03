@@ -765,6 +765,37 @@ jobs:
 
               private void deleteArtistPost(String id){new Thread(()->{try{ApiResult r=request("DELETE","/api/artist/posts?id="+urlEncode(id),null);if(r.code<200||r.code>=300)throw new Exception(r.body==null?"Could not delete post.":r.body.optString("error","Could not delete post."));runOnUiThread(()->{Toast.makeText(this,"Post deleted.",Toast.LENGTH_SHORT).show();myArtistPosts();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}}).start();}
 
+              private void artistMessages() {
+                  if (signedInUser == null) { screen("Profile"); return; }
+                  heading("Artist Messages", "Private chats with other NileSoniQ artists");
+                  action("Back to Artist Dashboard", this::artistDashboard);
+                  LinearLayout panel = column(); content.addView(panel);
+                  panel.addView(label("Loading artists…", 13, muted, false));
+                  new Thread(() -> {
+                      ApiResult result = request("GET", "/api/artist/messages", null);
+                      JSONArray artists = result.body == null ? null : result.body.optJSONArray("artists");
+                      runOnUiThread(() -> {
+                          panel.removeAllViews();
+                          if (result.code < 200 || result.code >= 300 || artists == null) {
+                              panel.addView(label("Could not load artists. Please sign in again and retry.", 13, muted, false));
+                              Button retry = new Button(this); retry.setText("Retry"); retry.setOnClickListener(v -> artistMessages()); panel.addView(retry); return;
+                          }
+                          if (artists.length() == 0) panel.addView(label("No other artist accounts were found yet.", 13, muted, false));
+                          for (int i=0; i<artists.length(); i++) {
+                              JSONObject artist = artists.optJSONObject(i); if (artist == null) continue;
+                              final String otherId = artist.optString("user_id", "");
+                              final String otherName = artist.optString("name", "Artist");
+                              if (otherId.isEmpty()) continue;
+                              Button open = new Button(this); open.setAllCaps(false);
+                              open.setText("✉  " + otherName + (artist.optString("location", "").isEmpty() ? "" : " · " + artist.optString("location")));
+                              open.setOnClickListener(v -> openArtistChat(otherId, otherName));
+                              panel.addView(open, new LinearLayout.LayoutParams(-1, -2));
+                          }
+                      });
+                  }).start();
+              }
+
+
               private void openPostDiscussion(JSONObject post){
                   try {
                       if(post==null){Toast.makeText(this,"This post is unavailable. Refresh Community and try again.",Toast.LENGTH_LONG).show();return;}
@@ -1585,6 +1616,7 @@ jobs:
                           verifyParams.bottomMargin=dp(12);
                           content.addView(verification,verifyParams);
                           action("My Community Posts",this::myArtistPosts);
+                          action("Messages — Chat with Artists",this::artistMessages);
                           // Dashboard summary cards follow the supplied reference while using only live API totals.
                           LinearLayout stats = new LinearLayout(this);
                           stats.setOrientation(LinearLayout.HORIZONTAL);
