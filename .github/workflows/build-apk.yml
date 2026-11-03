@@ -803,7 +803,8 @@ jobs:
                   EditText composer = field("Write a message…", InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
                   composer.setSingleLine(false); composer.setMinLines(2);
                   Button send = new Button(this); send.setText("Send Message"); send.setAllCaps(false);
-                  Runnable refresh = () -> new Thread(() -> {
+                  final Runnable[] refresh = new Runnable[1];
+                  refresh[0] = () -> new Thread(() -> {
                       ApiResult r = request("GET", "/api/artist/messages?with_user_id="+urlEncode(otherUserId), null);
                       JSONArray messages = r.body == null ? null : r.body.optJSONArray("messages");
                       runOnUiThread(() -> {
@@ -827,14 +828,14 @@ jobs:
                                   JSONObject body=new JSONObject(); body.put("recipient_user_id",otherUserId); body.put("message",value);
                                   ApiResult sent=request("POST","/api/artist/messages",body);
                                   if(sent.code<200||sent.code>=300) throw new Exception(sent.body==null?"Message could not be sent.":sent.body.optString("error","Message could not be sent."));
-                                  runOnUiThread(() -> { composer.setText(""); send.setEnabled(true); refresh.run(); });
+                                  runOnUiThread(() -> { composer.setText(""); send.setEnabled(true); refresh[0].run(); });
                               } catch(Exception e) { runOnUiThread(() -> { send.setEnabled(true); Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show(); }); } }).start();
                           });
                           thread.addView(send,new LinearLayout.LayoutParams(-1,-2));
-                          Button reload=new Button(this); reload.setText("Refresh Messages"); reload.setAllCaps(false); reload.setOnClickListener(v -> refresh.run()); thread.addView(reload);
+                          Button reload=new Button(this); reload.setText("Refresh Messages"); reload.setAllCaps(false); reload.setOnClickListener(v -> refresh[0].run()); thread.addView(reload);
                       });
                   }).start();
-                  refresh.run();
+                  refresh[0].run();
               }
 
 
