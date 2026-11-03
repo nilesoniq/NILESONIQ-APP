@@ -796,6 +796,48 @@ jobs:
               }
 
 
+              private void openArtistChat(String otherUserId, String otherName) {
+                  heading(otherName, "Private artist conversation");
+                  action("Back to Artist Messages", this::artistMessages);
+                  LinearLayout thread = column(); content.addView(thread);
+                  EditText composer = field("Write a message…", InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+                  composer.setSingleLine(false); composer.setMinLines(2);
+                  Button send = new Button(this); send.setText("Send Message"); send.setAllCaps(false);
+                  Runnable refresh = () -> new Thread(() -> {
+                      ApiResult r = request("GET", "/api/artist/messages?with_user_id="+urlEncode(otherUserId), null);
+                      JSONArray messages = r.body == null ? null : r.body.optJSONArray("messages");
+                      runOnUiThread(() -> {
+                          thread.removeAllViews();
+                          if (r.code < 200 || r.code >= 300 || messages == null) { thread.addView(label("Could not load this conversation.",13,muted,false)); return; }
+                          if (messages.length()==0) thread.addView(label("No messages yet. Send the first message below.",13,muted,false));
+                          for (int i=0;i<messages.length();i++) {
+                              JSONObject m=messages.optJSONObject(i); if(m==null) continue;
+                              boolean mine=m.optBoolean("is_mine",false);
+                              LinearLayout bubble=column(); bubble.setPadding(dp(12),dp(9),dp(12),dp(9));
+                              bubble.setBackground(rounded(mine?0xFFFFE8D5:Color.WHITE,12,border));
+                              bubble.addView(label((mine?"You":otherName)+" · "+m.optString("created_at",""),11,muted,true));
+                              bubble.addView(label(m.optString("message",""),14,white,false));
+                              LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,-2); bp.bottomMargin=dp(7); thread.addView(bubble,bp);
+                          }
+                          thread.addView(composer);
+                          send.setOnClickListener(v -> {
+                              String value=composer.getText().toString().trim(); if(value.isEmpty()) return;
+                              send.setEnabled(false);
+                              new Thread(() -> { try {
+                                  JSONObject body=new JSONObject(); body.put("recipient_user_id",otherUserId); body.put("message",value);
+                                  ApiResult sent=request("POST","/api/artist/messages",body);
+                                  if(sent.code<200||sent.code>=300) throw new Exception(sent.body==null?"Message could not be sent.":sent.body.optString("error","Message could not be sent."));
+                                  runOnUiThread(() -> { composer.setText(""); send.setEnabled(true); refresh.run(); });
+                              } catch(Exception e) { runOnUiThread(() -> { send.setEnabled(true); Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show(); }); } }).start();
+                          });
+                          thread.addView(send,new LinearLayout.LayoutParams(-1,-2));
+                          Button reload=new Button(this); reload.setText("Refresh Messages"); reload.setAllCaps(false); reload.setOnClickListener(v -> refresh.run()); thread.addView(reload);
+                      });
+                  }).start();
+                  refresh.run();
+              }
+
+
               private void openPostDiscussion(JSONObject post){
                   try {
                       if(post==null){Toast.makeText(this,"This post is unavailable. Refresh Community and try again.",Toast.LENGTH_LONG).show();return;}
